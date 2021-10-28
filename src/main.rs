@@ -1,6 +1,6 @@
-mod types;
 mod parser;
+mod stdlib;
+mod tests;
+mod types;
 
-fn main() {
-    println!("Hello, world!");
-}
+fn main() {}

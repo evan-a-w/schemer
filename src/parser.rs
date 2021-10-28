@@ -1,42 +1,81 @@
+use crate::stdlib::*;
 use crate::types::*;
-use regex::Regex;
 use lazy_static::lazy_static;
-use std::rc::Rc;
+use regex::Regex;
 use std::cell::RefCell;
+use std::rc::Rc;
 
 pub struct Program {
     pub locs: Dict,
     pub globs: Dict,
+    pub stack: Vec<GarbObject>,
 }
 
-pub fn tokenize(chars: String) -> Vec<String> {
-    chars.replace("(", " ( ")
-        .replace(")", " ) ")
-        .split(' ')
-        .map(|s| s.to_string())
-        .collect()
+pub fn parse_string(s: String) -> Option<Vec<String>> {
+    let mut res = vec![];
+    let mut opens = 0;
+    let mut curr_buff = String::new();
+    for c in s.chars() {
+        if c == ')' {
+            opens -= 1;
+            if opens < 0 {
+                return None;
+            }
+            curr_buff += &c.to_string();
+            if opens == 0 {
+                res.push(curr_buff);
+                curr_buff = String::new();
+            }
+        } else if c == '(' {
+            curr_buff += &c.to_string();
+            opens += 1;
+        } else if opens == 0 {
+            if !c.is_whitespace() {
+                curr_buff += &c.to_string();
+            } else if curr_buff.len() > 0 {
+                res.push(curr_buff);
+                curr_buff = String::new();
+            }
+        } else {
+            curr_buff += &c.to_string();
+        }
+    }
+    if opens != 0 {
+        return None;
+    }
+    if curr_buff.len() > 0 {
+        res.push(curr_buff);
+    }
+    Some(res)
 }
 
 impl Program {
     pub fn new() -> Self {
-        Program { globs: Dict::new(), locs: Dict::new() }
+        Program {
+            globs: get_stdlib(),
+            locs: Dict::new(),
+            stack: vec![],
+        }
     }
-    
-    pub fn get_inside_list(&self, s: String) -> List {
+
+    pub fn get_inside_list(&mut self, s: String) -> List {
         let mut curr: List = List::Null;
-        for s in s.split_whitespace() {
-            if let Some(x) = self.string_eval(s.to_string()) {
-                let t = curr.cons(x);
+        for st in parse_string(s).unwrap().into_iter().rev() {
+            if let Some(x) = self.string_eval(st) {
+                let t = List::Node(ListNode {
+                    val: x,
+                    next: Rc::new(RefCell::new(Object::List(curr))),
+                });
                 curr = t;
             }
         }
         curr
     }
 
-    pub fn get_inside_arr(&self, s: String) -> Vec<GarbObject> {
+    pub fn get_inside_arr(&mut self, s: String) -> Vec<GarbObject> {
         let mut arr: Vec<GarbObject> = vec![];
-        for s in s.split_whitespace() {
-            if let Some(x) = self.string_eval(s.to_string()) {
+        for st in parse_string(s).unwrap().into_iter() {
+            if let Some(x) = self.string_eval(st) {
                 arr.push(x);
             }
         }
@@ -48,32 +87,55 @@ impl Program {
             None => match self.globs.get(s) {
                 None => None,
                 Some(v) => Some(v.clone()),
-            }
+            },
             Some(v) => Some(v.clone()),
         }
     }
 
-    pub fn string_eval(&self, s: String) -> Option<Rc<RefCell<Object>>>  {
+    pub fn func_eval(&mut self, v: GarbObject, args: Vec<GarbObject>) -> GarbObject {
+        match &*v.borrow() {
+            Object::Func(Function::Base(f, _)) => f(&mut self.locs, &mut self.globs, args),
+            Object::Func(Function::Sequence(seq)) => {
+                Object::Error("Unimplemented".to_string()).to_garbobject()
+            }
+            _ => Object::Error("Evaluating a non-function".to_string()).to_garbobject(),
+        }
+    }
+
+    pub fn string_eval(&mut self, s: String) -> Option<Rc<RefCell<Object>>> {
         lazy_static! {
-            static ref STRING_RE: Regex = Regex::new(r#""\w*""#).unwrap();
-            static ref NUMBER_RE: Regex = Regex::new(r"[0-9.]+").unwrap();
-            static ref REF_RE: Regex = Regex::new(r"\w+").unwrap();
-            static ref SYMBOL_RE: Regex = Regex::new(r"'\w+").unwrap();
-            static ref ARRAY_RE: Regex = Regex::new(r"#\((.*)\)").unwrap();
-            static ref LIST_RE: Regex = Regex::new(r"'\((.*)\)").unwrap();
-            static ref FUNC_RE: Regex = Regex::new(r"\(([a-zA-Z0-9_-.]+)(.*)\)").unwrap();
-        } 
-        if STRING_RE.is_match(&s) {
-            Some(Rc::new(RefCell::new(Object::Atom(Atom::Str(s)))))
+            static ref STRING_RE: Regex = Regex::new(r#"^"([^'\#\s]*)"$"#).unwrap();
+            static ref NUMBER_RE: Regex = Regex::new(r"^[0-9.]+$").unwrap();
+            static ref BOOL_RE: Regex = Regex::new(r"^#([tT])?([fF])?$").unwrap();
+            static ref REF_RE: Regex = Regex::new(r"^\w+$").unwrap();
+            static ref SYMBOL_RE: Regex = Regex::new(r"^'(\w+)$").unwrap();
+            static ref ARRAY_RE: Regex = Regex::new(r"^'#\((.*)\)$").unwrap();
+            static ref LIST_RE: Regex = Regex::new(r"^'\((.*)\)$").unwrap();
+            static ref FUNC_RE: Regex = Regex::new(r"^\(([a-zA-Z0-9_\.-]+)(.*)\)$").unwrap();
+        }
+        if let Some(c) = STRING_RE.captures(&s) {
+            Some(Rc::new(RefCell::new(Object::Atom(Atom::Str(
+                c.get(1).unwrap().as_str().to_string(),
+            )))))
         } else if NUMBER_RE.is_match(&s) {
-            Some(Rc::new(RefCell::new(Object::Num(Number::Int(s.parse().unwrap())))))
+            Some(Rc::new(RefCell::new(Object::Num(Number::Int(
+                s.parse().unwrap(),
+            )))))
+        } else if let Some(x) = BOOL_RE.captures(&s) {
+            if let Some(_) = x.get(1) {
+                Some(Object::Bool(true).to_garbobject())
+            } else {
+                Some(Object::Bool(false).to_garbobject())
+            }
+        } else if let Some(c) = SYMBOL_RE.captures(&s) {
+            Some(Rc::new(RefCell::new(Object::Symbol(
+                c.get(1).unwrap().as_str().to_string(),
+            ))))
         } else if REF_RE.is_match(&s) {
             match self.get_ref(&s) {
                 None => None,
                 Some(v) => Some(v),
-            } 
-        } else if SYMBOL_RE.is_match(&s) {
-            Some(Rc::new(RefCell::new(Object::Symbol(s))))
+            }
         } else if let Some(cap) = FUNC_RE.captures(&s) {
             match self.get_ref(cap.get(1).unwrap().as_str()) {
                 None => None,
@@ -83,7 +145,7 @@ impl Program {
                             None => vec![],
                             Some(c) => self.get_inside_arr(c.as_str().to_string()),
                         };
-                        Some(Rc::new(RefCell::new(Object::Thonk((v.clone(), vec)))))
+                        Some(self.func_eval(v, vec))
                     } else {
                         None
                     }
@@ -91,11 +153,11 @@ impl Program {
             }
         } else if let Some(cap) = ARRAY_RE.captures(&s) {
             Some(Rc::new(RefCell::new(Object::Array(
-                self.get_inside_arr(cap.get(1).unwrap().as_str().to_string())
+                self.get_inside_arr(cap.get(1).unwrap().as_str().to_string()),
             ))))
         } else if let Some(cap) = LIST_RE.captures(&s) {
             Some(Rc::new(RefCell::new(Object::List(
-                self.get_inside_list(cap.get(1).unwrap().as_str().to_string())
+                self.get_inside_list(cap.get(1).unwrap().as_str().to_string()),
             ))))
         } else {
             None
