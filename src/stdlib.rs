@@ -108,12 +108,31 @@ pub fn plus(state: &mut Program, args: Vec<GarbObject>) -> GarbObject {
     ).to_garbobject()
 }
 
-pub fn let(state: &mut Program, args: Vec<GarbObject>) -> GarbObject {
+pub fn insert_list_(&mut Program, n: &ListNode, curr: &) {
+    match &*n.val.borrow() {
+        Object::List(List::Node(def)) => {
+            match &*def.val.borrow() {
+                Object::Symbol(s) => {
+                    if let Object::List(List::Node(val)) = &*def.next.borrow() {
+                        curr.insert(s.clone(), val.val.clone());
+                    } else {
+                        return;
+                    }
+                }
+                _ => return Object::Error("first thingy not symbol!".to_string()).to_garbobject(),
+            }
+        }
+        _ => { return Object::Error("Invalid type to let".to_string()).to_garbobject(); },
+    }
+}
+
+pub fn let_(state: &mut Program, args: Vec<GarbObject>) -> GarbObject {
     if args.len() != 2 {
         Object::Error("Arguments to let != 2".to_string()).to_garbobject()
     } else {
         match &*args[0].borrow() {
-            Object::List(List::Node(mut n)) => {
+            Object::List(List::Node(fst)) => {
+                let mut n = fst;
                 let mut curr: HashMap<String, GarbObject> = HashMap::new();
                 loop {
                     match &*n.val.borrow() {
@@ -126,17 +145,24 @@ pub fn let(state: &mut Program, args: Vec<GarbObject>) -> GarbObject {
                                         return Object::Error("Invalid list in let".to_string()).to_garbobject();
                                     }
                                 }
-                                // HERE
                                 _ => return Object::Error("first thingy not symbol!".to_string()).to_garbobject(),
                             }
                         }
                         _ => { return Object::Error("Invalid type to let".to_string()).to_garbobject(); },
                     }
-                    if let Object::List(List::Null) = &*n.next.borrow() {
-                        break;
-                    }
-                    n = n.next;
+                    let t = n.next.borrow();
+                    n = match n.next.borrow().get_node() {
+                        None => { break; },
+                        Some(v) => v,
+                    };
+                    //if let Object::List(List::Node(nec)) = &*t {
+                    //    n = nec.clone();
+                    //} else {
+                    //    break;
+                    //}
                 }
+                state.locals.push((curr, state.curr_level));
+                Object::Unit.to_garbobject()
             }
             _ => Object::Error("First arg to let is not a list".to_string()).to_garbobject(),
         }

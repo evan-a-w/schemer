@@ -123,6 +123,19 @@ impl List {
             }
         }
     }
+
+    pub fn loop_over<F: Fn(&mut Program, &ListNode)>(&self, f: F) {
+        match self {
+            List::Null => (),
+            List::Node(n) => {
+                if space {
+                    write!(f, " ");
+                }
+                write!(f, "{}", n.val.borrow()).unwrap_or(());
+                n.next.borrow().print_rec_list(f, true);
+            }
+        }
+    }
 }
 
 impl Object {
@@ -145,6 +158,7 @@ impl Object {
             Object::Array(_) => Type::Array,
             Object::Error(_) => Type::Error,
             Object::Bool(_) => Type::Bool,
+            Object::Unit => Type::Unit,
         }
     }
 
@@ -166,12 +180,21 @@ impl Object {
         Rc::new(RefCell::new(self))
     }
 
+    pub fn get_node(&self) -> Option<&ListNode> {
+        match self {
+            Object::List(List::Node(n)) => Some(n),
+            _ => None,
+        }
+    }
+
     pub fn print_rec_list(&self, f: &mut fmt::Formatter<'_>, space: bool) {
         match self {
             Object::List(n) => n.print_rec(f, space),
             _ => (),
         }
     }
+
+    pub fn loop_over_lsit(&self, )
 }
 
 impl fmt::Display for Object {
