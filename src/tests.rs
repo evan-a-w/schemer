@@ -35,6 +35,14 @@ fn test_basic_evaluation() {
         p.string_eval("#f".to_string()),
         Some(Rc::new(RefCell::new(Object::Bool(false))))
     );
+    assert_eq!(
+        p.string_eval("1001234".to_string()),
+        Some(Rc::new(RefCell::new(Object::Num(Number::Int(1001234)))))
+    );
+    assert_eq!(
+        p.string_eval("5.263".to_string()),
+        Some(Rc::new(RefCell::new(Object::Num(Number::Float(5.263)))))
+    );
     assert!(!p.string_eval("cons".to_string()).is_none());
     assert!(
         format!(
@@ -52,6 +60,7 @@ fn test_basic_evaluation() {
                 .borrow()
         ) == "'#(1 2 \"name\")"
     );
+    // Cons 
     assert!(
         format!(
             "{}",
@@ -60,6 +69,7 @@ fn test_basic_evaluation() {
                 .borrow()
         ) == "'(1 2 3)"
     );
+    // Car on list
     assert!(
         format!(
             "{}",
@@ -68,12 +78,7 @@ fn test_basic_evaluation() {
                 .borrow()
         ) == "1"
     );
-    println!(
-        "{}",
-        p.string_eval("(cdr '(1 23 \"name\" #t))".to_string())
-            .unwrap()
-            .borrow()
-    );
+    // cdr on list
     assert!(
         format!(
             "{}",
@@ -81,5 +86,33 @@ fn test_basic_evaluation() {
                 .unwrap()
                 .borrow()
         ) == "'(23 \"name\" #t)"
+    );
+    // Addition
+    assert!(
+        format!(
+            "{}",
+            p.string_eval("(+ 5 1)".to_string())
+                .unwrap()
+                .borrow()
+        ) == "6"
+    );
+    // Addition
+    assert!(
+        format!(
+            "{}",
+            p.string_eval("(+ 5 1 2.0 6)".to_string())
+                .unwrap()
+                .borrow()
+        ) == "14"
+    );
+    // Let bindings (not checking scope)
+    assert!(
+        format!(
+            "{}",
+            p.string_eval("(let ((x 1))
+                            (+ x 1))".to_string())
+                .unwrap()
+                .borrow()
+        ) == "2"
     );
 }

@@ -17,6 +17,7 @@ pub enum Object {
     Array(Vec<GarbObject>),
     Error(String),
     Bool(bool),
+    Unit,
 }
 
 pub enum Type {
@@ -30,45 +31,15 @@ pub enum Type {
     Array,
     Error,
     Bool,
+    Unit,
 }
 
+pub type Frames = Vec<(Dict, usize)>;
+
+#[derive(PartialEq, Debug)]
 pub enum Function {
-    Base(fn(&mut Dict, &mut Dict, Vec<GarbObject>) -> GarbObject, u16),
+    Base(String),
     Sequence(RuntimeFunc),
-}
-
-impl PartialEq for Function {
-    fn eq(&self, other: &Self) -> bool {
-        match self {
-            Function::Sequence(rt1) => {
-                if let Function::Sequence(rt2) = other {
-                    rt1 == rt2
-                } else {
-                    false
-                }
-            }
-            Function::Base(_, id1) => {
-                if let Function::Base(_, id2) = other {
-                    id1 == id2
-                } else {
-                    false
-                }
-            }
-        }
-    }
-}
-
-impl fmt::Debug for Function {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Function::Sequence(rt) => {
-                write!(f, "{:?}", rt)
-            }
-            Function::Base(_, id) => {
-                write!(f, "Base func with id {}", id)
-            }
-        }
-    }
 }
 
 #[derive(PartialEq, Debug)]
@@ -237,6 +208,7 @@ impl fmt::Display for Object {
             }
             Object::Error(s) => write!(f, "Error '{}'", s),
             Object::Bool(b) => write!(f, "{}", if *b { "#t" } else { "#f" }),
+            Object::Unit => write!(f, "Expected something else ig?"),
         }
     }
 }
