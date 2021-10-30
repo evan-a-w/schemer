@@ -30,13 +30,14 @@ pub fn get_stdlib() -> HashMap<String, fn(&mut Program, Vec<GarbObject>) -> Garb
     d
 }
 
-pub fn cons(state: &mut Program, mut args: Vec<GarbObject>) -> GarbObject {
-    state.convert_args(&mut args);
+pub fn cons(state: &mut Program, args: Vec<GarbObject>) -> GarbObject {
     if args.len() != 2 {
         Object::Error("Arguments to cons != 2".to_string()).to_garbobject()
     } else {
         match {
-            let b = args[1].borrow();
+            let mut b = args[1].clone();
+            state.convert_obj(&mut b); 
+            let b = b.borrow();
             b.type_of()
         } {
             Type::List => Object::List(List::Node(Rc::new(RefCell::new(ListNode {
@@ -51,13 +52,14 @@ pub fn cons(state: &mut Program, mut args: Vec<GarbObject>) -> GarbObject {
     }
 }
 
-pub fn car(state: &mut Program, mut args: Vec<GarbObject>) -> GarbObject {
-    state.convert_args(&mut args);
+pub fn car(state: &mut Program, args: Vec<GarbObject>) -> GarbObject {
     if args.len() != 1 {
         Object::Error("Arguments to car != 1".to_string()).to_garbobject()
     } else {
         match {
-            let b = args[0].borrow();
+            let mut b = args[0].clone();
+            state.convert_obj(&mut b); 
+            let b = b.borrow();
             b.type_of()
         } {
             Type::List => match args[0].borrow().head_list() {
@@ -71,13 +73,14 @@ pub fn car(state: &mut Program, mut args: Vec<GarbObject>) -> GarbObject {
     }
 }
 
-pub fn cdr(state: &mut Program, mut args: Vec<GarbObject>) -> GarbObject {
-    state.convert_args(&mut args);
+pub fn cdr(state: &mut Program, args: Vec<GarbObject>) -> GarbObject {
     if args.len() != 1 {
         Object::Error("Arguments to car != 1".to_string()).to_garbobject()
     } else {
         match {
-            let b = args[0].borrow();
+            let mut b = args[0].clone();
+            state.convert_obj(&mut b); 
+            let b = b.borrow();
             b.type_of()
         } {
             Type::List => match args[0].borrow().tail_list() {
@@ -91,11 +94,10 @@ pub fn cdr(state: &mut Program, mut args: Vec<GarbObject>) -> GarbObject {
     }
 }
 
-pub fn plus(state: &mut Program, mut args: Vec<GarbObject>) -> GarbObject {
-    state.convert_args(&mut args);
+pub fn plus(state: &mut Program, args: Vec<GarbObject>) -> GarbObject {
     args.into_iter().fold(
         Object::Num(Number::Int(0)),
-        |acc, x| match acc {
+        |acc, mut x| match { state.convert_obj(&mut x); acc } {
             Object::Num(Number::Int(a)) => match &*x.borrow() {
                 Object::Num(Number::Int(b)) => Object::Num(Number::Int(a + b)),
                 Object::Num(Number::Float(f)) => Object::Num(Number::Float(a as f64 + f)),
