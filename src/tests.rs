@@ -163,4 +163,40 @@ fn test_basic_evaluation() {
                 .unwrap()
             == Object::Num(Number::Int(80)).to_garbobject()
     );
+    assert!(
+        format!(
+            "{}",
+            p.full_string_eval(
+                "(let ((x 1) (y '(2 3)))
+                      (cons x y))"
+                .to_string())
+                .unwrap()
+                .borrow()
+        ) == "'(1 2 3)"
+    );
+    assert!(
+        format!(
+            "{}",
+            p.full_string_eval(
+                "(let ((a '(2 3)))
+                    (let ((x 1) (y (cons 4 a)))
+                      (cons x y)))"
+                .to_string())
+                .unwrap()
+                .borrow()
+        ) == "'(1 4 2 3)"
+    );
+    assert!(
+        format!(
+            "{}",
+            p.full_string_eval(
+                "(cdr
+                    (let ((a '(2 3)))
+                    (let ((x 1) (y (cons 4 a)))
+                      (cons x y))))"
+                .to_string())
+                .unwrap()
+                .borrow()
+        ) == "'(4 2 3)"
+    );
 }

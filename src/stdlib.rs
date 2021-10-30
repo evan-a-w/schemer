@@ -34,19 +34,18 @@ pub fn cons(state: &mut Program, args: Vec<GarbObject>) -> GarbObject {
     if args.len() != 2 {
         Object::Error("Arguments to cons != 2".to_string()).to_garbobject()
     } else {
+        let b = state.eval(args[1].clone());
         match {
-            let mut b = args[1].clone();
-            state.convert_obj(&mut b); 
             let b = b.borrow();
             b.type_of()
         } {
             Type::List => Object::List(List::Node(Rc::new(RefCell::new(ListNode {
-                next: args[1].clone(),
-                val: args[0].clone(),
+                next: b.clone(),
+                val: state.eval(args[0].clone()),
             }))))
             .to_garbobject(),
             // Propagate errors
-            Type::Error => args[1].clone(),
+            Type::Error => b.clone(),
             _ => Object::Error("2nd arg to cons is not a list".to_string()).to_garbobject(),
         }
     }
@@ -56,18 +55,17 @@ pub fn car(state: &mut Program, args: Vec<GarbObject>) -> GarbObject {
     if args.len() != 1 {
         Object::Error("Arguments to car != 1".to_string()).to_garbobject()
     } else {
+        let b = state.eval(args[0].clone());
         match {
-            let mut b = args[0].clone();
-            state.convert_obj(&mut b); 
             let b = b.borrow();
             b.type_of()
         } {
-            Type::List => match args[0].borrow().head_list() {
+            Type::List => match b.borrow().head_list() {
                 None => Object::Error("Car of empty list".to_string()).to_garbobject(),
                 Some(v) => v,
             },
             // Propagate errors
-            Type::Error => args[0].clone(),
+            Type::Error => b.clone(),
             _ => Object::Error("Arg to car is not a list".to_string()).to_garbobject(),
         }
     }
@@ -77,18 +75,17 @@ pub fn cdr(state: &mut Program, args: Vec<GarbObject>) -> GarbObject {
     if args.len() != 1 {
         Object::Error("Arguments to car != 1".to_string()).to_garbobject()
     } else {
+        let b = state.eval(args[0].clone());
         match {
-            let mut b = args[0].clone();
-            state.convert_obj(&mut b); 
             let b = b.borrow();
             b.type_of()
         } {
-            Type::List => match args[0].borrow().tail_list() {
+            Type::List => match b.borrow().tail_list() {
                 None => Object::Error("Cdr of empty list".to_string()).to_garbobject(),
                 Some(v) => v,
             },
             // Propagate errors
-            Type::Error => args[0].clone(),
+            Type::Error => b.clone(),
             _ => Object::Error("Arg to car is not a list".to_string()).to_garbobject(),
         }
     }
@@ -97,7 +94,7 @@ pub fn cdr(state: &mut Program, args: Vec<GarbObject>) -> GarbObject {
 pub fn plus(state: &mut Program, args: Vec<GarbObject>) -> GarbObject {
     args.into_iter().fold(
         Object::Num(Number::Int(0)),
-        |acc, mut x| match { state.convert_obj(&mut x); acc } {
+        |acc, mut x| match { x = state.eval(x); acc } {
             Object::Num(Number::Int(a)) => match &*x.borrow() {
                 Object::Num(Number::Int(b)) => Object::Num(Number::Int(a + b)),
                 Object::Num(Number::Float(f)) => Object::Num(Number::Float(a as f64 + f)),
@@ -146,7 +143,6 @@ pub fn let_(state: &mut Program, mut args: Vec<GarbObject>) -> GarbObject {
                                     ).to_garbobject();
                                 }
                             }
-                            
                         }
                         _ => {
                             return Object::Error("Arg to let is not a list".to_string()).to_garbobject();
@@ -154,7 +150,6 @@ pub fn let_(state: &mut Program, mut args: Vec<GarbObject>) -> GarbObject {
                     }
                 }
                 state.locals.push(curr);
-                state.convert_obj(&mut args[1]);
                 let res = state.eval(args[1].clone());
                 state.locals.pop();
                 res

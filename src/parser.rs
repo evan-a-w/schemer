@@ -122,6 +122,12 @@ impl Program {
                     }
                 }
             }
+        } else if let Object::Symbol(s) = &*obj.borrow() {
+            let r = self.get_ref(s);
+            match r {
+                Some(x) => return x,
+                None => (),
+            }
         }
         obj
     }

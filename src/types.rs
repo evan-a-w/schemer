@@ -215,7 +215,7 @@ impl fmt::Display for Object {
             Object::Error(s) => write!(f, "Error '{}'", s),
             Object::Bool(b) => write!(f, "{}", if *b { "#t" } else { "#f" }),
             Object::L(l) => write!(f, "List object: {:?}", l),
-            Object::Unit => write!(f, "Unit type..."),
+            Object::Unit => write!(f, "()"),
         }
     }
 }
