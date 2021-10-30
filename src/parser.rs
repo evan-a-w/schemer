@@ -111,11 +111,16 @@ impl Program {
     
     pub fn eval(&mut self, obj: GarbObject) -> GarbObject {
         if let Object::L(v) = &*obj.borrow() {
-            if v.len() > 0 && v[0].borrow().is_func() {
-                return self.func_eval(v[0].clone(), v[1..].to_vec());
-            } else {
-                return Rc::new(RefCell::new(Object::Error(
-                    format!("Couldn't evaluate the expression {:?}", v))));
+            if v.len() > 0 {
+                if v[0].borrow().is_func() {
+                    return self.func_eval(v[0].clone(), v[1..].to_vec());
+                } else if let Object::Symbol(s) = &*v[0].borrow() {
+                    if let Some(ob) = self.get_ref(&s) {
+                        if ob.borrow().is_func() {
+                            return self.func_eval(ob.clone(), v[1..].to_vec());
+                        }
+                    }
+                }
             }
         }
         obj
@@ -217,10 +222,7 @@ impl Program {
                 c.get(1).unwrap().as_str().to_string(),
             ))))
         } else if REF_RE.is_match(&s) {
-            match self.get_ref(&s) {
-                None => Some(Rc::new(RefCell::new(Object::Symbol(s)))),
-                Some(v) => Some(v),
-            }
+            Some(Rc::new(RefCell::new(Object::Symbol(s))))
         } else if let Some(cap) = L_RE.captures(&s) {
             let v = self.get_inside_arr(cap.get(1).unwrap().as_str()
                 .to_string());

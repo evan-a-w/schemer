@@ -30,7 +30,8 @@ pub fn get_stdlib() -> HashMap<String, fn(&mut Program, Vec<GarbObject>) -> Garb
     d
 }
 
-pub fn cons(state: &mut Program, args: Vec<GarbObject>) -> GarbObject {
+pub fn cons(state: &mut Program, mut args: Vec<GarbObject>) -> GarbObject {
+    state.convert_args(&mut args);
     if args.len() != 2 {
         Object::Error("Arguments to cons != 2".to_string()).to_garbobject()
     } else {
@@ -43,14 +44,15 @@ pub fn cons(state: &mut Program, args: Vec<GarbObject>) -> GarbObject {
                 val: args[0].clone(),
             }))))
             .to_garbobject(),
-            // Propogate errors
+            // Propagate errors
             Type::Error => args[1].clone(),
             _ => Object::Error("2nd arg to cons is not a list".to_string()).to_garbobject(),
         }
     }
 }
 
-pub fn car(state: &mut Program, args: Vec<GarbObject>) -> GarbObject {
+pub fn car(state: &mut Program, mut args: Vec<GarbObject>) -> GarbObject {
+    state.convert_args(&mut args);
     if args.len() != 1 {
         Object::Error("Arguments to car != 1".to_string()).to_garbobject()
     } else {
@@ -62,14 +64,15 @@ pub fn car(state: &mut Program, args: Vec<GarbObject>) -> GarbObject {
                 None => Object::Error("Car of empty list".to_string()).to_garbobject(),
                 Some(v) => v,
             },
-            // Propogate errors
+            // Propagate errors
             Type::Error => args[0].clone(),
             _ => Object::Error("Arg to car is not a list".to_string()).to_garbobject(),
         }
     }
 }
 
-pub fn cdr(state: &mut Program, args: Vec<GarbObject>) -> GarbObject {
+pub fn cdr(state: &mut Program, mut args: Vec<GarbObject>) -> GarbObject {
+    state.convert_args(&mut args);
     if args.len() != 1 {
         Object::Error("Arguments to car != 1".to_string()).to_garbobject()
     } else {
@@ -81,32 +84,33 @@ pub fn cdr(state: &mut Program, args: Vec<GarbObject>) -> GarbObject {
                 None => Object::Error("Cdr of empty list".to_string()).to_garbobject(),
                 Some(v) => v,
             },
-            // Propogate errors
+            // Propagate errors
             Type::Error => args[0].clone(),
             _ => Object::Error("Arg to car is not a list".to_string()).to_garbobject(),
         }
     }
 }
 
-pub fn plus(state: &mut Program, args: Vec<GarbObject>) -> GarbObject {
+pub fn plus(state: &mut Program, mut args: Vec<GarbObject>) -> GarbObject {
+    state.convert_args(&mut args);
     args.into_iter().fold(
         Object::Num(Number::Int(0)),
         |acc, x| match acc {
             Object::Num(Number::Int(a)) => match &*x.borrow() {
                 Object::Num(Number::Int(b)) => Object::Num(Number::Int(a + b)),
                 Object::Num(Number::Float(f)) => Object::Num(Number::Float(a as f64 + f)),
-                // Propogate errors
+                // Propagate errors
                 Object::Error(e) => Object::Error(e.to_string()),
                 _ => Object::Error("Arg to + is not a number".to_string()),
             },
             Object::Num(Number::Float(a)) => match &*x.borrow() {
                 Object::Num(Number::Int(b)) => Object::Num(Number::Float(a + *b as f64)),
                 Object::Num(Number::Float(f)) => Object::Num(Number::Float(a as f64 + f)),
-                // Propogate errors
+                // Propagate errors
                 Object::Error(e) => Object::Error(e.to_string()),
                 _ => Object::Error("Arg to + is not a number".to_string()),
             },
-            // Propogate errors
+            // Propagate errors
             Object::Error(e) => Object::Error(e),
             _ => Object::Error("Arg to + is not a number".to_string()),
         }
@@ -117,9 +121,6 @@ pub fn let_(state: &mut Program, mut args: Vec<GarbObject>) -> GarbObject {
     if args.len() != 2 {
         Object::Error("Arguments to let != 2".to_string()).to_garbobject()
     } else {
-                //{
-                //    println!("ting:\n*****\n{:?}\n*****\n", &args);
-                //}
         args.push(Object::Unit.to_garbobject());
         match &*args.swap_remove(0).borrow() {
             Object::L(v) => {
