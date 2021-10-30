@@ -17,6 +17,7 @@ pub enum Object {
     Array(Vec<GarbObject>),
     Error(String),
     Bool(bool),
+    L(Vec<GarbObject>),
     Unit,
 }
 
@@ -31,6 +32,7 @@ pub enum Type {
     Array,
     Error,
     Bool,
+    L,
     Unit,
 }
 
@@ -66,7 +68,7 @@ pub enum Atom {
 
 #[derive(PartialEq, Debug)]
 pub enum List {
-    Node(ListNode),
+    Node(Rc<ListNode>),
     Null,
 }
 
@@ -78,10 +80,10 @@ pub struct ListNode {
 
 impl List {
     pub fn cons(self, other: GarbObject) -> Self {
-        List::Node(ListNode {
+        List::Node(Rc::new(ListNode {
             next: Object::List(self).to_garbobject(),
             val: other,
-        })
+        }))
     }
 
     pub fn head(&self) -> Option<GarbObject> {
@@ -123,19 +125,6 @@ impl List {
             }
         }
     }
-
-    pub fn loop_over<F: Fn(&mut Program, &ListNode)>(&self, f: F) {
-        match self {
-            List::Null => (),
-            List::Node(n) => {
-                if space {
-                    write!(f, " ");
-                }
-                write!(f, "{}", n.val.borrow()).unwrap_or(());
-                n.next.borrow().print_rec_list(f, true);
-            }
-        }
-    }
 }
 
 impl Object {
@@ -158,6 +147,7 @@ impl Object {
             Object::Array(_) => Type::Array,
             Object::Error(_) => Type::Error,
             Object::Bool(_) => Type::Bool,
+            Object::L(_) => Type::L,
             Object::Unit => Type::Unit,
         }
     }
@@ -180,9 +170,9 @@ impl Object {
         Rc::new(RefCell::new(self))
     }
 
-    pub fn get_node(&self) -> Option<&ListNode> {
+    pub fn get_node(&self) -> Option<Rc<ListNode>> {
         match self {
-            Object::List(List::Node(n)) => Some(n),
+            Object::List(List::Node(n)) => Some(n.clone()),
             _ => None,
         }
     }
@@ -193,8 +183,6 @@ impl Object {
             _ => (),
         }
     }
-
-    pub fn loop_over_lsit(&self, )
 }
 
 impl fmt::Display for Object {
@@ -231,7 +219,8 @@ impl fmt::Display for Object {
             }
             Object::Error(s) => write!(f, "Error '{}'", s),
             Object::Bool(b) => write!(f, "{}", if *b { "#t" } else { "#f" }),
-            Object::Unit => write!(f, "Expected something else ig?"),
+            Object::L(l) => write!(f, "List object: {:?}", l),
+            Object::Unit => write!(f, "Unit type..."),
         }
     }
 }
