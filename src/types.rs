@@ -2,7 +2,6 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 use std::fmt;
 use std::rc::Rc;
-use crate::parser::Program;
 use std::cmp::PartialEq;
 
 #[derive(PartialEq, Debug)]
@@ -118,7 +117,7 @@ impl List {
             List::Null => (),
             List::Node(n) => {
                 if space {
-                    write!(f, " ");
+                    write!(f, " ").unwrap();
                 }
                 write!(f, "{}", n.borrow().val.borrow()).unwrap_or(());
                 n.borrow().next.borrow().print_rec_list(f, true);

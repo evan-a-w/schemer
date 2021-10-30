@@ -1,3 +1,5 @@
+#![allow(unused_imports)]
+
 use crate::parser::*;
 use crate::stdlib::*;
 use crate::types::*;
