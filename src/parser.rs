@@ -193,7 +193,7 @@ impl Program {
             static ref FLOAT_RE: Regex = Regex::new(r"^[0-9]+\.[0-9]+$").unwrap();
             static ref BOOL_RE: Regex = Regex::new(r"^#([tT])?([fF])?$").unwrap();
             static ref REF_RE: Regex = Regex::new(r"^[^\s()]+$").unwrap();
-            static ref SYMBOL_RE: Regex = Regex::new(r"^'(\w+)$").unwrap();
+            static ref SYMBOL_RE: Regex = Regex::new(r"^'([^\s()]+)$").unwrap();
             static ref ARRAY_RE: Regex = Regex::new(r"^'#\((.*)\)$").unwrap();
             static ref LIST_RE: Regex = Regex::new(r"^'\((.*)\)$").unwrap();
             static ref L_RE: Regex = Regex::new(r"^\((.*)\)$").unwrap();

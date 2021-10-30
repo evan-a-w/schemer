@@ -155,4 +155,12 @@ fn test_basic_evaluation() {
                 .unwrap()
             == Object::Num(Number::Int(80)).to_garbobject()
     );
+    // Not even sure if this is the proper behaviour
+    assert!(
+            p.full_string_eval("(let ((f '+) (x 1))
+                                     (let ((x 23) (y 57))
+                                     (f x y)))".to_string())
+                .unwrap()
+            == Object::Num(Number::Int(80)).to_garbobject()
+    );
 }
