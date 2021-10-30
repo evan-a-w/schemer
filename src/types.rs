@@ -8,11 +8,10 @@ use std::cmp::PartialEq;
 pub enum Object {
     Symbol(String),
     Num(Number),
-    Atom(Atom),
     List(List),
     Env(Dict),
+    Atom(Atom),
     Func(Function),
-    Thonk((GarbObject, Vec<GarbObject>)),
     Array(Vec<GarbObject>),
     Error(String),
     Bool(bool),
@@ -27,7 +26,6 @@ pub enum Type {
     List,
     Env,
     Func,
-    Thonk,
     Array,
     Error,
     Bool,
@@ -142,7 +140,6 @@ impl Object {
             Object::List(_) => Type::List,
             Object::Env(_) => Type::Env,
             Object::Func(_) => Type::Func,
-            Object::Thonk(_) => Type::Thonk,
             Object::Array(_) => Type::Array,
             Object::Error(_) => Type::Error,
             Object::Bool(_) => Type::Bool,
@@ -202,7 +199,6 @@ impl fmt::Display for Object {
             Object::List(l) => write!(f, "'({})", l),
             Object::Env(_) => write!(f, "Environment"),
             Object::Func(_) => write!(f, "Function object"),
-            Object::Thonk(_) => write!(f, "Thonkerinni"),
             Object::Array(a) => {
                 write!(f, "'#(").unwrap();
                 let mut between = false;
