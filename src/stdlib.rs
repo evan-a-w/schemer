@@ -1,4 +1,5 @@
 use crate::types::*;
+use std::cell::RefCell;
 use crate::parser::Program;
 use std::collections::HashMap;
 use std::rc::Rc;
@@ -37,10 +38,10 @@ pub fn cons(state: &mut Program, args: Vec<GarbObject>) -> GarbObject {
             let b = args[1].borrow();
             b.type_of()
         } {
-            Type::List => Object::List(List::Node(Rc::new(ListNode {
+            Type::List => Object::List(List::Node(Rc::new(RefCell::new(ListNode {
                 next: args[1].clone(),
                 val: args[0].clone(),
-            })))
+            }))))
             .to_garbobject(),
             // Propogate errors
             Type::Error => args[1].clone(),
@@ -112,25 +113,34 @@ pub fn plus(state: &mut Program, args: Vec<GarbObject>) -> GarbObject {
     ).to_garbobject()
 }
 
-pub fn let_(state: &mut Program, args: Vec<GarbObject>) -> GarbObject {
+pub fn let_(state: &mut Program, mut args: Vec<GarbObject>) -> GarbObject {
     if args.len() != 2 {
         Object::Error("Arguments to let != 2".to_string()).to_garbobject()
     } else {
-        match &*args[0].borrow() {
+                //{
+                //    println!("ting:\n*****\n{:?}\n*****\n", &args);
+                //}
+        args.push(Object::Unit.to_garbobject());
+        match &*args.swap_remove(0).borrow() {
             Object::L(v) => {
                 let mut curr = HashMap::new();
                 for p in v.into_iter() {
                     match &*p.borrow() {
                         Object::L(sl) => {
                             if sl.len() != 2 {
-                                return Object::Error("Invalid let binding".to_string()).to_garbobject();
+                                return Object::Error(
+                                    format!("Invalid let binding with {:?} (length {})"
+                                            , sl, sl.len())
+                                ).to_garbobject();
                             }
                             match &*sl[0].borrow() {
                                 Object::Symbol(s) => {
                                     curr.insert(s.clone(), state.eval(sl[1].clone()));
                                 },
                                 _ => {
-                                    return Object::Error("Invalid let binding".to_string()).to_garbobject();
+                                    return Object::Error(
+                                        format!("Invalid let binding with {:?}", sl)
+                                    ).to_garbobject();
                                 }
                             }
                             
@@ -140,9 +150,11 @@ pub fn let_(state: &mut Program, args: Vec<GarbObject>) -> GarbObject {
                         }
                     }
                 }
-                state.locals.push((curr, state.curr_level));
-                state.convert_args(&mut args[1]);
-                state.eval(args[1].clone())
+                state.locals.push(curr);
+                state.convert_obj(&mut args[1]);
+                let res = state.eval(args[1].clone());
+                state.locals.pop();
+                res
             }
             _ => {
                 Object::Error("First arg to let is not a list".to_string()).to_garbobject()

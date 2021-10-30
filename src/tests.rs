@@ -107,21 +107,42 @@ fn test_basic_evaluation() {
     );
     assert!(format!("{}", p.full_string_eval("'(1 '(1 2))".to_string())
             .unwrap().borrow()) == "'(1 '(1 2))");
-    println!(
-            "{}",
-            p.full_string_eval("(let ((x 1))
-                            (+ x 1))".to_string())
-                .unwrap()
-                .borrow()
-    );
+    assert!(p.full_string_eval("x".to_string())
+            == Some(Object::Symbol("x".to_string()).to_garbobject()));
     // Let bindings (not checking scope)
+    assert!(
+            p.full_string_eval("(let ((x 23))
+                                     (+ x 57))".to_string())
+                .unwrap()
+            == Object::Num(Number::Int(80)).to_garbobject()
+    );
     assert!(
         format!(
             "{}",
-            p.full_string_eval("(let ((x 1))
-                            (+ x 1))".to_string())
+            p.full_string_eval("(let ((x 23))
+                                     (+ x 57))".to_string())
                 .unwrap()
                 .borrow()
-        ) == "2"
+        ) == "80"
+    );
+    assert!(
+            p.full_string_eval("(let ((x 23) (y 57))
+                                     (+ x y))".to_string())
+                .unwrap()
+            == Object::Num(Number::Int(80)).to_garbobject()
+    );
+    assert!(
+            p.full_string_eval("(let ((f +))
+                                     (let ((x 23) (y 57))
+                                     (f x y)))".to_string())
+                .unwrap()
+            == Object::Num(Number::Int(80)).to_garbobject()
+    );
+    assert!(
+            p.full_string_eval("(let ()
+                                     (let ((x 23) (y 57))
+                                     (+ x y)))".to_string())
+                .unwrap()
+            == Object::Num(Number::Int(80)).to_garbobject()
     );
 }

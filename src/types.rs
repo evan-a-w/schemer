@@ -36,7 +36,7 @@ pub enum Type {
     Unit,
 }
 
-pub type Frames = Vec<(Dict, usize)>;
+pub type Frames = Vec<Dict>;
 
 #[derive(PartialEq, Debug)]
 pub enum Function {
@@ -68,7 +68,7 @@ pub enum Atom {
 
 #[derive(PartialEq, Debug)]
 pub enum List {
-    Node(Rc<ListNode>),
+    Node(Rc<RefCell<ListNode>>),
     Null,
 }
 
@@ -80,29 +80,29 @@ pub struct ListNode {
 
 impl List {
     pub fn cons(self, other: GarbObject) -> Self {
-        List::Node(Rc::new(ListNode {
+        List::Node(Rc::new(RefCell::new(ListNode {
             next: Object::List(self).to_garbobject(),
             val: other,
-        }))
+        })))
     }
 
     pub fn head(&self) -> Option<GarbObject> {
         match self {
             List::Null => None,
-            List::Node(x) => Some(x.val.clone()),
+            List::Node(x) => Some(x.borrow().val.clone()),
         }
     }
 
     pub fn tail(&self) -> Option<GarbObject> {
         match self {
             List::Null => None,
-            List::Node(x) => Some(x.next.clone()),
+            List::Node(x) => Some(x.borrow().next.clone()),
         }
     }
 
     pub fn next_null(&self) -> bool {
         match self {
-            List::Node(n) => match &*n.next.borrow() {
+            List::Node(n) => match &*n.borrow().next.borrow() {
                 Object::List(n) => match n {
                     List::Null => true,
                     _ => false,
@@ -120,8 +120,8 @@ impl List {
                 if space {
                     write!(f, " ");
                 }
-                write!(f, "{}", n.val.borrow()).unwrap_or(());
-                n.next.borrow().print_rec_list(f, true);
+                write!(f, "{}", n.borrow().val.borrow()).unwrap_or(());
+                n.borrow().next.borrow().print_rec_list(f, true);
             }
         }
     }
@@ -170,7 +170,7 @@ impl Object {
         Rc::new(RefCell::new(self))
     }
 
-    pub fn get_node(&self) -> Option<Rc<ListNode>> {
+    pub fn get_node(&self) -> Option<Rc<RefCell<ListNode>>> {
         match self {
             Object::List(List::Node(n)) => Some(n.clone()),
             _ => None,

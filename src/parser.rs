@@ -9,7 +9,6 @@ use std::rc::Rc;
 pub struct Program {
     pub locals: Frames,
     pub globs: Dict,
-    pub curr_level: usize,
     pub stdlib: HashMap<String, fn(&mut Program, Vec<GarbObject>) -> GarbObject>,
 }
 
@@ -57,7 +56,6 @@ impl Program {
             globs: Dict::new(),
             locals: vec![],
             stdlib: get_stdlib(),
-            curr_level: 0,
         }
     }
 
@@ -75,15 +73,29 @@ impl Program {
         }
     }
 
-    pub fn convert_obj(&self, obj: GarbObject) -> GarbObject {
-        match &*obj.clone().borrow() {
+    pub fn convert_node(&self, n: Rc<RefCell<ListNode>>) {
+        let mut v = n.borrow_mut();
+        self.convert_obj(&mut v.val);
+        self.convert_obj(&mut v.next);
+    }
+
+    pub fn convert_obj(&self, obj: &mut GarbObject) {
+        match &mut *obj.clone().borrow_mut() {
             Object::Symbol(s) => {
                 if let Some(n) = self.get_ref(&s) {
-                    return n.clone();
+                    *obj = n.clone();
                 }
-                return obj;
             }
-            _ => obj,
+            Object::Array(ref mut v) => {
+                self.convert_args(v);
+            }
+            Object::L(ref mut v) => {
+                self.convert_args(v);
+            }
+            Object::List(List::Node(n)) => {
+                self.convert_node(n.clone());
+            }
+            _ => (),
         }
     }
 
@@ -91,7 +103,9 @@ impl Program {
         let t = self.string_eval(s);
         match t {
             None => None,
-            Some(x) => Some(self.eval(x)),
+            Some(x) => {
+                Some(self.eval(x))
+            }
         }
     }
     
@@ -109,42 +123,32 @@ impl Program {
 
     pub fn get_inside_list(&mut self, s: String) -> List {
         let mut curr: List = List::Null;
-        self.curr_level += 1;
         for st in parse_string(s).unwrap().into_iter().rev() {
             if let Some(x) = self.string_eval(st) {
-                let t = List::Node(Rc::new(ListNode {
+                let t = List::Node(Rc::new(RefCell::new(ListNode {
                     val: x,
                     next: Rc::new(RefCell::new(Object::List(curr))),
-                }));
+                })));
                 curr = t;
             }
-        }
-        self.curr_level -= 1;
-        if self.locals.len() > 0
-           && self.locals[self.locals.len() - 1].1 > self.curr_level {
-            self.locals.pop();
         }
         curr
     }
 
     pub fn get_inside_arr(&mut self, s: String) -> Vec<GarbObject> {
         let mut arr: Vec<GarbObject> = vec![];
-        self.curr_level += 1;
         for st in parse_string(s).unwrap().into_iter() {
             if let Some(x) = self.string_eval(st) {
                 arr.push(x);
+            } else {
+                println!("Failed in get_inside_arr:");
             }
-        }
-        self.curr_level -= 1;
-        if self.locals.len() > 0
-           && self.locals[self.locals.len() - 1].1 > self.curr_level {
-            self.locals.pop();
         }
         arr
     }
 
     pub fn find_frames(&self, s: &str) -> Option<GarbObject> {
-        for (frame, _) in self.locals.iter().rev() {
+        for frame in self.locals.iter().rev() {
             if let Some(x) = frame.get(s) {
                 return Some(x.clone());
             }
@@ -157,7 +161,7 @@ impl Program {
             None => match self.globs.get(s) {
                 None => match self.stdlib.get(s) {
                     None => None,
-                    Some(x) => Some(Object::Func(Function::Base(s.to_string()))
+                    Some(_) => Some(Object::Func(Function::Base(s.to_string()))
                                    .to_garbobject()),
                 },
                 Some(v) => Some(v.clone()),
@@ -183,7 +187,7 @@ impl Program {
             static ref INT_RE: Regex = Regex::new(r"^[0-9]+$").unwrap();
             static ref FLOAT_RE: Regex = Regex::new(r"^[0-9]+\.[0-9]+$").unwrap();
             static ref BOOL_RE: Regex = Regex::new(r"^#([tT])?([fF])?$").unwrap();
-            static ref REF_RE: Regex = Regex::new(r"^[^\s]+$").unwrap();
+            static ref REF_RE: Regex = Regex::new(r"^[^\s()]+$").unwrap();
             static ref SYMBOL_RE: Regex = Regex::new(r"^'(\w+)$").unwrap();
             static ref ARRAY_RE: Regex = Regex::new(r"^'#\((.*)\)$").unwrap();
             static ref LIST_RE: Regex = Regex::new(r"^'\((.*)\)$").unwrap();
