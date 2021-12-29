@@ -1,202 +1,275 @@
-#![allow(unused_imports)]
-
+use crate::gc::*;
+use crate::gc_obj::*;
 use crate::parser::*;
-use crate::stdlib::*;
+use crate::runtime::*;
 use crate::types::*;
-use std::cell::RefCell;
-use std::rc::Rc;
+use std::collections::HashMap;
+use std::collections::LinkedList;
+
+// Also need to test with valgrind or w/e so this is a standalone function
+// (can be called in main)
+pub fn test_basic_garbage_collection_manual_binding() {
+    let mut runtime = Runtime::new();
+    let id1 = runtime.gc.add_obj(Ponga::Null);
+    let id2 = runtime.gc.add_obj(Ponga::Array(vec![
+        Ponga::Number(Number::Float(1.5)),
+        Ponga::Object(HashMap::new()),
+    ]));
+
+    runtime.bind_global("hi".to_string(), id1);
+    runtime.bind_global("bye".to_string(), id2);
+    runtime.collect_garbage();
+
+    assert!(runtime.gc.ptrs.len() == 2);
+
+    runtime.unbind_global("hi");
+    runtime.collect_garbage();
+
+    assert!(runtime.gc.ptrs.len() == 1);
+
+    runtime.unbind_global("bye");
+    runtime.collect_garbage();
+
+    assert!(runtime.gc.ptrs.len() == 0);
+}
 
 #[test]
-fn test_parse() {
-    assert!(
-        parse_string("cons '#(1 2 3) '(1 2) '() () \"name\" pee".to_string())
-            .unwrap()
-            .len()
-            == 7
+pub fn test_gc_1() {
+    test_basic_garbage_collection_manual_binding();
+}
+
+#[test]
+pub fn test_int_parse() {
+    let res = int_parser("123");
+    assert!(res == Ok(("", 123)));
+    let res = int_parser("-123");
+    assert!(res == Ok(("", -123)));
+
+    let res = int_parser("#b101001");
+    assert!(res == Ok(("", 0b101001)));
+    let res = int_parser("#B101001");
+    assert!(res == Ok(("", 0b101001)));
+
+    let res = int_parser("#xBEEF");
+    assert!(res == Ok(("", 0xBEEF)));
+    let res = int_parser("#Xbeef");
+    assert!(res == Ok(("", 0xBEEF)));
+
+    let res = int_parser("#o123");
+    assert!(res == Ok(("", 0o123)));
+    let res = int_parser("#o123");
+    assert!(res == Ok(("", 0o123)));
+
+    assert!(int_parser("penis").is_err());
+}
+
+#[test]
+pub fn test_float_parse() {
+    let res = float_parser("0.1");
+    assert!(res == Ok(("", 0.1)));
+
+    let res = float_parser(".1");
+    assert!(res == Ok(("", 0.1)));
+
+    let res = float_parser("0.");
+    assert!(res == Ok(("", 0.)));
+
+    let res = float_parser("0.5e2");
+    assert!(res == Ok(("", 0.5e2)));
+
+    let res = float_parser(".5e2");
+    assert!(res == Ok(("", 0.5e2)));
+
+    let res = float_parser("-.5e2");
+    assert!(res == Ok(("", -0.5e2)));
+}
+
+#[test]
+pub fn test_num_parse() {
+    let res = ponga_parser("123");
+    assert!(res == Ok(("", Ponga::Number(Number::Int(123)))));
+    let res = ponga_parser("-123");
+    assert!(res == Ok(("", Ponga::Number(Number::Int(-123)))));
+
+    let res = ponga_parser("#b101001");
+    assert!(res == Ok(("", Ponga::Number(Number::Int(0b101001)))));
+    let res = ponga_parser("#B101001");
+    assert!(res == Ok(("", Ponga::Number(Number::Int(0b101001)))));
+
+    let res = ponga_parser("#xBEEF");
+    assert!(res == Ok(("", Ponga::Number(Number::Int(0xbeef)))));
+    let res = ponga_parser("#Xbeef");
+    assert!(res == Ok(("", Ponga::Number(Number::Int(0xbeef)))));
+
+    let res = ponga_parser("#o123");
+    assert!(res == Ok(("", Ponga::Number(Number::Int(0o123)))));
+    let res = ponga_parser("#O123");
+    assert!(res == Ok(("", Ponga::Number(Number::Int(0o123)))));
+
+    let res = ponga_parser("0.1");
+    assert!(res == Ok(("", Ponga::Number(Number::Float(0.1)))));
+
+    let res = ponga_parser(".1");
+    assert!(res == Ok(("", Ponga::Number(Number::Float(0.1)))));
+
+    let res = ponga_parser("0.");
+    assert!(res == Ok(("", Ponga::Number(Number::Float(0.)))));
+
+    let res = ponga_parser("0.5e2");
+    assert!(res == Ok(("", Ponga::Number(Number::Float(0.5e2)))));
+
+    let res = ponga_parser(".5e2");
+    assert!(res == Ok(("", Ponga::Number(Number::Float(0.5e2)))));
+
+    let res = ponga_parser("-.5e2");
+    assert!(res == Ok(("", Ponga::Number(Number::Float(-0.5e2)))));
+}
+
+#[test]
+pub fn test_string_parse() {
+    let data = "\"abc\"";
+    let result = string_parser(data);
+    assert_eq!(result, Ok(("", Ponga::String(String::from("abc")))));
+
+    let data = "\"tab:\\tafter tab, newline:\\nnew line, quote: \\\", emoji: \\u{1F602}, newline:\\nescaped whitespace: \\    abc\"";
+    let result = string_parser(data);
+    assert_eq!(
+        result,
+        Ok((
+            "",
+            Ponga::String(String::from("tab:\tafter tab, newline:\nnew line, quote: \", emoji: 😂, newline:\nescaped whitespace: abc"))
+        ))
     );
 }
 
 #[test]
-fn test_basic_evaluation() {
-    let mut p = Program::new();
+pub fn test_array_parser() {
+    use crate::types::Number::{Float, Int};
+    use Ponga::*;
+    let res = ponga_parser("#(1   2.0  \"hi\"  )");
+    assert!(
+        res == Ok((
+            "",
+            Array(vec![
+                Number(Int(1)),
+                Number(Float(2.0)),
+                String("hi".to_string())
+            ])
+        ))
+    );
+    let res = ponga_parser("#()");
+    assert!(res == Ok(("", Array(vec![]))));
+}
+
+#[test]
+pub fn test_list_parser() {
+    use crate::types::Number::{Float, Int};
+    use Ponga::*;
+    let res = ponga_parser("'(1   2.0  \"hi\"  )");
+    assert!(
+        res == Ok((
+            "",
+            List(
+                vec![Number(Int(1)), Number(Float(2.0)), String("hi".to_string())]
+                    .into_iter()
+                    .collect()
+            )
+        ))
+    );
+    let res = ponga_parser("'()");
+    assert!(res == Ok(("", List(LinkedList::new()))));
+}
+
+#[test]
+pub fn test_identifer_and_symbol_parser() {
+    let rest = identifier_parser("abc");
+    assert!(rest == Ok(("", Ponga::Identifier("abc".to_string()))));
+
+    let res = ponga_parser("abc");
+    assert!(res == Ok(("", Ponga::Identifier("abc".to_string()))));
+
+    let res = ponga_parser("ab,#c");
+    assert!(res == Ok(("", Ponga::Identifier("ab,#c".to_string()))));
+
+    let res = ponga_parser(",ab,#c");
+    assert!(res.is_err());
+
+    let res = ponga_parser("#abc");
+    assert!(res.is_err());
+
+    let res = ponga_parser("'abc");
+    assert!(res == Ok(("", Ponga::Symbol("abc".to_string()))));
+}
+
+#[test]
+pub fn test_bool_parser() {
+    assert!(ponga_parser("#t") == Ok(("", Ponga::True)));
+
+    assert!(ponga_parser("#f") == Ok(("", Ponga::False)));
+
+    assert!(bool_parser("#a").is_err());
+    println!("{:?}", bool_parser("#tf"));
+}
+
+#[test]
+pub fn test_char_parser() {
+    assert!(ponga_parser("#\\B") == Ok(("", Ponga::Char('B'))));
+
+    assert!(ponga_parser("#B").is_err());
+}
+
+#[test]
+pub fn test_parser_sexpr() {
+    use Ponga::*;
+    use crate::types::Number::{Int, Float};
+    let res = ponga_parser(
+    "(define (foldl func accu alist)
+       (if (null? alist)
+         accu
+         (foldl func (func (car alist) accu) (cdr alist))))"
+    );
     assert_eq!(
-        p.full_string_eval("\"name\"".to_string()),
-        Some(Rc::new(RefCell::new(Object::Atom(Atom::Str(
-            "name".to_string()
-        )))))
+        res,
+        Ok(("",
+            Sexpr(vec![Identifier("define".to_string()), Sexpr(vec![Identifier("foldl".to_string()), Identifier("func".to_string()), Identifier("accu".to_string()), Identifier("alist".to_string()) ]), Sexpr(vec![Identifier("if".to_string()), Sexpr(vec![Identifier("null?".to_string()), Identifier("alist".to_string()) ]), Identifier("accu".to_string()), Sexpr(vec![Identifier("foldl".to_string()), Identifier("func".to_string()), Sexpr(vec![Identifier("func".to_string()), Sexpr(vec![Identifier("car".to_string()), Identifier("alist".to_string()) ]), Identifier("accu".to_string()) ]), Sexpr(vec![Identifier("cdr".to_string()), Identifier("alist".to_string()) ]) ]) ]) ])))
     );
-    assert_eq!(
-        p.full_string_eval("'name".to_string()),
-        Some(Rc::new(RefCell::new(Object::Symbol("name".to_string()))))
+
+    assert!(ponga_parser("").is_err());
+    
+    let res = pongascript_parser(
+    "(foldl cons '() '(1 2 3 4 5))
+     (define (foldl func accu alist)
+       (if (null? alist)
+         accu
+         (foldl func (func (car alist) accu) (cdr alist))))
+
+     (foldl cons '() '(1 2 3 4 5))"
     );
-    assert_eq!(
-        p.full_string_eval("#t".to_string()),
-        Some(Rc::new(RefCell::new(Object::Bool(true))))
-    );
-    assert_eq!(
-        p.full_string_eval("#f".to_string()),
-        Some(Rc::new(RefCell::new(Object::Bool(false))))
-    );
-    assert_eq!(
-        p.full_string_eval("1001234".to_string()),
-        Some(Rc::new(RefCell::new(Object::Num(Number::Int(1001234)))))
-    );
-    assert_eq!(
-        p.full_string_eval("5.263".to_string()),
-        Some(Rc::new(RefCell::new(Object::Num(Number::Float(5.263)))))
-    );
-    assert!(!p.full_string_eval("cons".to_string()).is_none());
-    assert!(
-        format!(
-            "{}",
-            p.full_string_eval("'(1 2 \"name\")".to_string())
-                .unwrap()
-                .borrow()
-        ) == "'(1 2 \"name\")"
-    );
-    assert!(
-        format!(
-            "{}",
-            p.full_string_eval("'#(1 2 \"name\")".to_string())
-                .unwrap()
-                .borrow()
-        ) == "'#(1 2 \"name\")"
-    );
-    // Cons 
-    assert!(
-        format!(
-            "{}",
-            p.full_string_eval("(cons 1 '(2 3))".to_string())
-                .unwrap()
-                .borrow()
-        ) == "'(1 2 3)"
-    );
-    // Car on list
-    assert!(
-        format!(
-            "{}",
-            p.full_string_eval("(car '(1 2 3))".to_string())
-                .unwrap()
-                .borrow()
-        ) == "1"
-    );
-    // cdr on list
-    assert!(
-        format!(
-            "{}",
-            p.full_string_eval("(cdr '(1 23 \"name\" #t))".to_string())
-                .unwrap()
-                .borrow()
-        ) == "'(23 \"name\" #t)"
-    );
-    // Addition
-    assert!(
-        format!(
-            "{}",
-            p.full_string_eval("(+ 5 1)".to_string())
-                .unwrap()
-                .borrow()
-        ) == "6"
-    );
-    // Addition
-    assert!(
-        format!(
-            "{}",
-            p.full_string_eval("(+ 5 1 2.0 6)".to_string())
-                .unwrap()
-                .borrow()
-        ) == "14"
-    );
-    assert!(format!("{}", p.full_string_eval("'(1 '(1 2))".to_string())
-            .unwrap().borrow()) == "'(1 '(1 2))");
-    assert!(p.full_string_eval("x".to_string())
-            == Some(Object::Symbol("x".to_string()).to_garbobject()));
-    // Let bindings (not checking scope)
-    assert!(
-            p.full_string_eval("(let ((x 23))
-                                     (+ x 57))".to_string())
-                .unwrap()
-            == Object::Num(Number::Int(80)).to_garbobject()
-    );
-    assert!(
-        format!(
-            "{}",
-            p.full_string_eval("(let ((x 23))
-                                     (+ x 57))".to_string())
-                .unwrap()
-                .borrow()
-        ) == "80"
-    );
-    assert!(
-            p.full_string_eval("(let ((x 23) (y 57))
-                                     (+ x y))".to_string())
-                .unwrap()
-            == Object::Num(Number::Int(80)).to_garbobject()
-    );
-    assert!(
-            p.full_string_eval("(let ((f +))
-                                     (let ((x 23) (y 57))
-                                     (f x y)))".to_string())
-                .unwrap()
-            == Object::Num(Number::Int(80)).to_garbobject()
-    );
-    assert!(
-            p.full_string_eval("(let ()
-                                     (let ((x 23) (y 57))
-                                     (+ x y)))".to_string())
-                .unwrap()
-            == Object::Num(Number::Int(80)).to_garbobject()
-    );
-    // Test shadowing
-    assert!(
-            p.full_string_eval("(let ((f +) (x 1))
-                                     (let ((x 23) (y 57))
-                                     (f x y)))".to_string())
-                .unwrap()
-            == Object::Num(Number::Int(80)).to_garbobject()
-    );
-    // Not even sure if this is the proper behaviour
-    assert!(
-            p.full_string_eval("(let ((f '+) (x 1))
-                                     (let ((x 23) (y 57))
-                                     (f x y)))".to_string())
-                .unwrap()
-            == Object::Num(Number::Int(80)).to_garbobject()
-    );
-    assert!(
-        format!(
-            "{}",
-            p.full_string_eval(
-                "(let ((x 1) (y '(2 3)))
-                      (cons x y))"
-                .to_string())
-                .unwrap()
-                .borrow()
-        ) == "'(1 2 3)"
-    );
-    assert!(
-        format!(
-            "{}",
-            p.full_string_eval(
-                "(let ((a '(2 3)))
-                    (let ((x 1) (y (cons 4 a)))
-                      (cons x y)))"
-                .to_string())
-                .unwrap()
-                .borrow()
-        ) == "'(1 4 2 3)"
-    );
-    assert!(
-        format!(
-            "{}",
-            p.full_string_eval(
-                "(cdr
-                    (let ((a '(2 3)))
-                    (let ((x 1) (y (cons 4 a)))
-                      (cons x y))))"
-                .to_string())
-                .unwrap()
-                .borrow()
-        ) == "'(4 2 3)"
-    );
+    assert_eq!(res, Ok(("",
+vec![Sexpr(vec![Identifier("foldl".to_string()), Identifier("cons".to_string()), List(vec![].into_iter().collect()), List(vec![Number(Int(1)), Number(Int(2)), Number(Int(3)), Number(Int(4)), Number(Int(5))].into_iter().collect())]), Sexpr(vec![Identifier("define".to_string()), Sexpr(vec![Identifier("foldl".to_string()), Identifier("func".to_string()), Identifier("accu".to_string()), Identifier("alist".to_string())]), Sexpr(vec![Identifier("if".to_string()), Sexpr(vec![Identifier("null?".to_string()), Identifier("alist".to_string())]), Identifier("accu".to_string()), Sexpr(vec![Identifier("foldl".to_string()), Identifier("func".to_string()), Sexpr(vec![Identifier("func".to_string()), Sexpr(vec![Identifier("car".to_string()), Identifier("alist".to_string())]), Identifier("accu".to_string())]), Sexpr(vec![Identifier("cdr".to_string()), Identifier("alist".to_string())])])])]), Sexpr(vec![Identifier("foldl".to_string()), Identifier("cons".to_string()), List(vec![].into_iter().collect()), List(vec![Number(Int(1)), Number(Int(2)), Number(Int(3)), Number(Int(4)), Number(Int(5))].into_iter().collect())])]
+    )));
+}
+
+#[test]
+pub fn test_basic_run() {
+    use Ponga::*;
+    use RuntimeErr::*;
+
+    let parsed = pongascript_parser(
+    "(foldl cons '() '(1 2 3 4 5))
+     (define (foldl func accu alist)
+       (if (null? alist)
+         accu
+         (foldl func (func (car alist) accu) (cdr alist))))
+
+     (foldl cons '() '(1 2 3 4 5))"
+    ).unwrap();
+    let mut runtime = Runtime::new();
+    let evald = parsed.1.into_iter().map(|x| runtime.eval(x)).collect::<Vec<RunRes<Ponga>>>();
+    // for now
+    assert_eq!(evald,
+        vec![Err(ReferenceError("Identifier foldl not found".to_string())),
+             Ok(Null), Ok(Ref(12))]);
+
+    runtime.collect_garbage();
 }
