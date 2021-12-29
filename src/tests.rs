@@ -220,34 +220,138 @@ pub fn test_char_parser() {
 
 #[test]
 pub fn test_parser_sexpr() {
+    use crate::types::Number::{Float, Int};
     use Ponga::*;
-    use crate::types::Number::{Int, Float};
     let res = ponga_parser(
-    "(define (foldl func accu alist)
+        "(define (foldl func accu alist)
        (if (null? alist)
          accu
-         (foldl func (func (car alist) accu) (cdr alist))))"
+         (foldl func (func (car alist) accu) (cdr alist))))",
     );
     assert_eq!(
         res,
-        Ok(("",
-            Sexpr(vec![Identifier("define".to_string()), Sexpr(vec![Identifier("foldl".to_string()), Identifier("func".to_string()), Identifier("accu".to_string()), Identifier("alist".to_string()) ]), Sexpr(vec![Identifier("if".to_string()), Sexpr(vec![Identifier("null?".to_string()), Identifier("alist".to_string()) ]), Identifier("accu".to_string()), Sexpr(vec![Identifier("foldl".to_string()), Identifier("func".to_string()), Sexpr(vec![Identifier("func".to_string()), Sexpr(vec![Identifier("car".to_string()), Identifier("alist".to_string()) ]), Identifier("accu".to_string()) ]), Sexpr(vec![Identifier("cdr".to_string()), Identifier("alist".to_string()) ]) ]) ]) ])))
+        Ok((
+            "",
+            Sexpr(vec![
+                Identifier("define".to_string()),
+                Sexpr(vec![
+                    Identifier("foldl".to_string()),
+                    Identifier("func".to_string()),
+                    Identifier("accu".to_string()),
+                    Identifier("alist".to_string())
+                ]),
+                Sexpr(vec![
+                    Identifier("if".to_string()),
+                    Sexpr(vec![
+                        Identifier("null?".to_string()),
+                        Identifier("alist".to_string())
+                    ]),
+                    Identifier("accu".to_string()),
+                    Sexpr(vec![
+                        Identifier("foldl".to_string()),
+                        Identifier("func".to_string()),
+                        Sexpr(vec![
+                            Identifier("func".to_string()),
+                            Sexpr(vec![
+                                Identifier("car".to_string()),
+                                Identifier("alist".to_string())
+                            ]),
+                            Identifier("accu".to_string())
+                        ]),
+                        Sexpr(vec![
+                            Identifier("cdr".to_string()),
+                            Identifier("alist".to_string())
+                        ])
+                    ])
+                ])
+            ])
+        ))
     );
 
     assert!(ponga_parser("").is_err());
-    
+
     let res = pongascript_parser(
-    "(foldl cons '() '(1 2 3 4 5))
+        "(foldl cons '() '(1 2 3 4 5))
      (define (foldl func accu alist)
        (if (null? alist)
          accu
          (foldl func (func (car alist) accu) (cdr alist))))
 
-     (foldl cons '() '(1 2 3 4 5))"
+     (foldl cons '() '(1 2 3 4 5))",
     );
-    assert_eq!(res, Ok(("",
-vec![Sexpr(vec![Identifier("foldl".to_string()), Identifier("cons".to_string()), List(vec![].into_iter().collect()), List(vec![Number(Int(1)), Number(Int(2)), Number(Int(3)), Number(Int(4)), Number(Int(5))].into_iter().collect())]), Sexpr(vec![Identifier("define".to_string()), Sexpr(vec![Identifier("foldl".to_string()), Identifier("func".to_string()), Identifier("accu".to_string()), Identifier("alist".to_string())]), Sexpr(vec![Identifier("if".to_string()), Sexpr(vec![Identifier("null?".to_string()), Identifier("alist".to_string())]), Identifier("accu".to_string()), Sexpr(vec![Identifier("foldl".to_string()), Identifier("func".to_string()), Sexpr(vec![Identifier("func".to_string()), Sexpr(vec![Identifier("car".to_string()), Identifier("alist".to_string())]), Identifier("accu".to_string())]), Sexpr(vec![Identifier("cdr".to_string()), Identifier("alist".to_string())])])])]), Sexpr(vec![Identifier("foldl".to_string()), Identifier("cons".to_string()), List(vec![].into_iter().collect()), List(vec![Number(Int(1)), Number(Int(2)), Number(Int(3)), Number(Int(4)), Number(Int(5))].into_iter().collect())])]
-    )));
+    assert_eq!(
+        res,
+        Ok((
+            "",
+            vec![
+                Sexpr(vec![
+                    Identifier("foldl".to_string()),
+                    Identifier("cons".to_string()),
+                    List(vec![].into_iter().collect()),
+                    List(
+                        vec![
+                            Number(Int(1)),
+                            Number(Int(2)),
+                            Number(Int(3)),
+                            Number(Int(4)),
+                            Number(Int(5))
+                        ]
+                        .into_iter()
+                        .collect()
+                    )
+                ]),
+                Sexpr(vec![
+                    Identifier("define".to_string()),
+                    Sexpr(vec![
+                        Identifier("foldl".to_string()),
+                        Identifier("func".to_string()),
+                        Identifier("accu".to_string()),
+                        Identifier("alist".to_string())
+                    ]),
+                    Sexpr(vec![
+                        Identifier("if".to_string()),
+                        Sexpr(vec![
+                            Identifier("null?".to_string()),
+                            Identifier("alist".to_string())
+                        ]),
+                        Identifier("accu".to_string()),
+                        Sexpr(vec![
+                            Identifier("foldl".to_string()),
+                            Identifier("func".to_string()),
+                            Sexpr(vec![
+                                Identifier("func".to_string()),
+                                Sexpr(vec![
+                                    Identifier("car".to_string()),
+                                    Identifier("alist".to_string())
+                                ]),
+                                Identifier("accu".to_string())
+                            ]),
+                            Sexpr(vec![
+                                Identifier("cdr".to_string()),
+                                Identifier("alist".to_string())
+                            ])
+                        ])
+                    ])
+                ]),
+                Sexpr(vec![
+                    Identifier("foldl".to_string()),
+                    Identifier("cons".to_string()),
+                    List(vec![].into_iter().collect()),
+                    List(
+                        vec![
+                            Number(Int(1)),
+                            Number(Int(2)),
+                            Number(Int(3)),
+                            Number(Int(4)),
+                            Number(Int(5))
+                        ]
+                        .into_iter()
+                        .collect()
+                    )
+                ])
+            ]
+        ))
+    );
 }
 
 #[test]
@@ -256,20 +360,30 @@ pub fn test_basic_run() {
     use RuntimeErr::*;
 
     let parsed = pongascript_parser(
-    "(foldl cons '() '(1 2 3 4 5))
+        "(foldl cons '() '(1 2 3 4 5))
      (define (foldl func accu alist)
        (if (null? alist)
          accu
          (foldl func (func (car alist) accu) (cdr alist))))
 
-     (foldl cons '() '(1 2 3 4 5))"
-    ).unwrap();
+     (foldl cons '() '(1 2 3 4 5))",
+    )
+    .unwrap();
     let mut runtime = Runtime::new();
-    let evald = parsed.1.into_iter().map(|x| runtime.eval(x)).collect::<Vec<RunRes<Ponga>>>();
+    let evald = parsed
+        .1
+        .into_iter()
+        .map(|x| runtime.eval(x))
+        .collect::<Vec<RunRes<Ponga>>>();
     // for now
-    assert_eq!(evald,
-        vec![Err(ReferenceError("Identifier foldl not found".to_string())),
-             Ok(Null), Ok(Ref(12))]);
+    assert_eq!(
+        evald,
+        vec![
+            Err(ReferenceError("Identifier foldl not found".to_string())),
+            Ok(Null),
+            Ok(Ref(12))
+        ]
+    );
 
     runtime.collect_garbage();
 }

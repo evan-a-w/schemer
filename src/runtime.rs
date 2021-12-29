@@ -1,9 +1,9 @@
 use crate::gc::*;
-use crate::types::*;
 use crate::gc_obj::*;
 use crate::stdlib::*;
-use std::collections::HashMap;
+use crate::types::*;
 use std::cell::UnsafeCell;
+use std::collections::HashMap;
 use std::ptr::{self, NonNull};
 
 pub const DEBUG_PRINT: bool = false;
@@ -60,9 +60,13 @@ impl Runtime {
     }
 
     pub fn get_id_obj(&mut self, id: Id) -> RunRes<&mut GcObj> {
-        self.gc.ptrs.get_mut(&id).ok_or(
-            RuntimeErr::ReferenceError(format!("Reference {} not found", id))
-        )
+        self.gc
+            .ptrs
+            .get_mut(&id)
+            .ok_or(RuntimeErr::ReferenceError(format!(
+                "Reference {} not found",
+                id
+            )))
     }
 
     pub fn get_identifier_id(&mut self, identifier: &str) -> RunRes<Id> {
@@ -75,9 +79,13 @@ impl Runtime {
             Some(id) => return Ok(*id),
             None => (),
         }
-        let id = self.global_funcs.get(identifier).ok_or(
-            RuntimeErr::ReferenceError(format!("Identifier {} not found", identifier))
-        )?;
+        let id = self
+            .global_funcs
+            .get(identifier)
+            .ok_or(RuntimeErr::ReferenceError(format!(
+                "Identifier {} not found",
+                identifier
+            )))?;
         Ok(*id)
     }
 
@@ -98,13 +106,15 @@ impl Runtime {
             }
             None => (),
         }
-        let id = self.global_funcs.get(identifier).ok_or(
-            RuntimeErr::ReferenceError(format!("Identifier {} not found", identifier))
-        )?;
+        let id = self
+            .global_funcs
+            .get(identifier)
+            .ok_or(RuntimeErr::ReferenceError(format!(
+                "Identifier {} not found",
+                identifier
+            )))?;
         Ok(GcObj {
-            data: NonNull::new(Box::into_raw(Box::new(
-                Ponga::HFunc(*id),
-            ))).unwrap(),
+            data: NonNull::new(Box::into_raw(Box::new(Ponga::HFunc(*id)))).unwrap(),
             flags: UnsafeCell::new(Flags {
                 marker: MarkerFlag::Unseen,
                 taken: TakenFlag::NotTaken,
@@ -119,9 +129,10 @@ impl Runtime {
         match pong {
             Ponga::HFunc(id) => {
                 if *id >= FUNCS.len() {
-                    return Err(RuntimeErr::ReferenceError(
-                        format!("Function {} not found", id)
-                    ));
+                    return Err(RuntimeErr::ReferenceError(format!(
+                        "Function {} not found",
+                        id
+                    )));
                 }
                 FUNCS[*id].1(self, args)
             }
@@ -133,10 +144,13 @@ impl Runtime {
                         println!("Binding {} to {:?}", name, arg);
                     }
                     let n_id = self.gc.add_obj(arg);
-                    self.locals.entry(name.to_string()).or_insert(Vec::new()).push(n_id);
+                    self.locals
+                        .entry(name.to_string())
+                        .or_insert(Vec::new())
+                        .push(n_id);
                 }
 
-                let sexpr= self.get_id_obj(*id)?.borrow().unwrap().inner().clone();
+                let sexpr = self.get_id_obj(*id)?.borrow().unwrap().inner().clone();
 
                 let res = self.eval(sexpr)?;
 
@@ -161,7 +175,7 @@ impl Runtime {
                 Ok(res)
             }
             _ => Err(RuntimeErr::TypeError(
-                "Using non-callable value as function".to_string()
+                "Using non-callable value as function".to_string(),
             )),
         }
     }
@@ -197,11 +211,13 @@ impl Runtime {
                 Ok(Ponga::List(res))
             }
             Ref(id) => {
-                let obj = self.gc.take_id(id).ok_or(
-                    RuntimeErr::ReferenceError(
-                        format!("Reference {} not found", id)
-                    )
-                )?;
+                let obj = self
+                    .gc
+                    .take_id(id)
+                    .ok_or(RuntimeErr::ReferenceError(format!(
+                        "Reference {} not found",
+                        id
+                    )))?;
                 let res = self.eval(obj)?;
 
                 self.gc.add_obj_with_id(res, id);
@@ -214,7 +230,7 @@ impl Runtime {
                 //println!("{}: {:?}", s, obj);
                 self.eval(obj)
             }
-            _ => Ok(pong)
+            _ => Ok(pong),
         }
     }
 }

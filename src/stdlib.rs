@@ -1,10 +1,14 @@
-use crate::types::*;
 use crate::runtime::*;
+use crate::types::*;
 use std::collections::LinkedList;
 
 pub const FUNCS: &[(&str, fn(&mut Runtime, Vec<Ponga>) -> RunRes<Ponga>)] = &[
-    ("cons", cons), ("null?", null), ("define", define), ("if", iff),
-    ("car", car), ("cdr", cdr),
+    ("cons", cons),
+    ("null?", null),
+    ("define", define),
+    ("if", iff),
+    ("car", car),
+    ("cdr", cdr),
 ];
 
 pub fn args_assert_len(args: &Vec<Ponga>, len: usize, name: &str) -> RunRes<()> {
@@ -91,7 +95,9 @@ pub fn null(runtime: &mut Runtime, mut args: Vec<Ponga>) -> RunRes<Ponga> {
                     Ok(runtime.gc.ponga_into_gc_ref(res))
                 }
                 Ponga::Null => Ok(Ponga::True),
-                _ => Err(RuntimeErr::TypeError(format!("null? requires a list or null"))),
+                _ => Err(RuntimeErr::TypeError(format!(
+                    "null? requires a list or null"
+                ))),
             }
         }
         _ => Err(RuntimeErr::TypeError(format!("null requires a list"))),
@@ -105,9 +111,9 @@ pub fn define(runtime: &mut Runtime, mut args: Vec<Ponga>) -> RunRes<Ponga> {
     match arg {
         Ponga::Sexpr(v) => {
             let mut iter = v.into_iter();
-            let name = iter.next().ok_or(
-                RuntimeErr::TypeError(format!("define requires a name")),
-            )?;
+            let name = iter
+                .next()
+                .ok_or(RuntimeErr::TypeError(format!("define requires a name")))?;
             let name = match name {
                 Ponga::Identifier(s) => s,
                 _ => {
@@ -120,7 +126,11 @@ pub fn define(runtime: &mut Runtime, mut args: Vec<Ponga>) -> RunRes<Ponga> {
             for i in iter {
                 match i {
                     Ponga::Identifier(s) => new_args.push(s),
-                    _ => return Err(RuntimeErr::TypeError(format!("arguments to defined functions must be identifiers"))),
+                    _ => {
+                        return Err(RuntimeErr::TypeError(format!(
+                            "arguments to defined functions must be identifiers"
+                        )))
+                    }
                 }
             }
             let id = runtime.gc.add_obj(func);
@@ -130,8 +140,8 @@ pub fn define(runtime: &mut Runtime, mut args: Vec<Ponga>) -> RunRes<Ponga> {
             Ok(Ponga::Null)
         }
         _ => Err(RuntimeErr::TypeError(format!(
-            "first argument to define must be a S-Expression"))
-        )
+            "first argument to define must be a S-Expression"
+        ))),
     }
 }
 
@@ -154,14 +164,16 @@ pub fn iff(runtime: &mut Runtime, mut args: Vec<Ponga>) -> RunRes<Ponga> {
                     drop(obj);
                     runtime.eval(iter.nth(1).unwrap())
                 }
-                _ => Err(RuntimeErr::TypeError(
-                    format!("if requires a boolean condition (provided {:?})", cond)
-                )),
+                _ => Err(RuntimeErr::TypeError(format!(
+                    "if requires a boolean condition (provided {:?})",
+                    cond
+                ))),
             }
         }
-        _ => Err(RuntimeErr::TypeError(
-            format!("if requires a boolean condition (provided {:?})", cond)
-        )),
+        _ => Err(RuntimeErr::TypeError(format!(
+            "if requires a boolean condition (provided {:?})",
+            cond
+        ))),
     }
 }
 
@@ -170,20 +182,20 @@ pub fn car(runtime: &mut Runtime, mut args: Vec<Ponga>) -> RunRes<Ponga> {
     let mut args = eval_args(runtime, args)?;
     let arg = args.pop().unwrap();
     match arg {
-        Ponga::List(list) => {
-            Ok(list.iter().next().ok_or(
-                RuntimeErr::TypeError(format!("car of empty list")),
-            )?.clone())
-        }
+        Ponga::List(list) => Ok(list
+            .iter()
+            .next()
+            .ok_or(RuntimeErr::TypeError(format!("car of empty list")))?
+            .clone()),
         Ponga::Ref(id) => {
             let mut obj = runtime.get_id_obj(id)?.borrow_mut().unwrap();
             let r = obj.inner();
             match r {
-                Ponga::List(list) => {
-                    Ok(list.iter().next().ok_or(
-                        RuntimeErr::TypeError(format!("car of empty list")),
-                    )?.clone())
-                }
+                Ponga::List(list) => Ok(list
+                    .iter()
+                    .next()
+                    .ok_or(RuntimeErr::TypeError(format!("car of empty list")))?
+                    .clone()),
                 _ => Err(RuntimeErr::TypeError(format!("car requires a list"))),
             }
         }
@@ -204,9 +216,7 @@ pub fn cdr(runtime: &mut Runtime, mut args: Vec<Ponga>) -> RunRes<Ponga> {
             let mut obj = runtime.get_id_obj(id)?.borrow_mut().unwrap();
             let r = obj.inner();
             match r {
-                Ponga::List(list) => {
-                    Ok(Ponga::List(list.iter().skip(1).cloned().collect()))
-                }
+                Ponga::List(list) => Ok(Ponga::List(list.iter().skip(1).cloned().collect())),
                 _ => Err(RuntimeErr::TypeError(format!("car requires a list"))),
             }
         }

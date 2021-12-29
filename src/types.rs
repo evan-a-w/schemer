@@ -1,7 +1,7 @@
-use std::collections::HashMap;
-use std::collections::LinkedList;
 use crate::ratio::*;
 use crate::runtime::Runtime;
+use std::collections::HashMap;
+use std::collections::LinkedList;
 
 pub type Id = usize;
 

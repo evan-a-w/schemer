@@ -45,11 +45,9 @@ impl Gc {
 
     pub fn take_id(&mut self, id: Id) -> Option<Ponga> {
         let obj = self.ptrs.get_mut(&id)?;
-        let res = unsafe {
-            *Box::from_raw(obj.data.as_ptr())
-        };
+        let res = unsafe { *Box::from_raw(obj.data.as_ptr()) };
         self.ptrs.remove(&id);
-        Some(res) 
+        Some(res)
     }
 
     pub fn get_new_id(&mut self) -> Id {

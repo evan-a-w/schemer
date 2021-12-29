@@ -1,17 +1,16 @@
-use nom::branch::alt;
-use nom::bytes::streaming::{is_not, take_while_m_n};
-use nom::bytes::complete::{tag, take_while1, take};
-use nom::character::complete::{char, one_of, multispace0, multispace1};
-use nom::combinator::{map, map_opt, map_res, value, verify, opt, recognize,
-                      complete, not};
-use nom::error::{FromExternalError, ParseError};
-use nom::multi::{fold_many0, many1, many0, fill};
-use nom::sequence::{delimited, preceded, terminated, pair, tuple};
-use nom::multi::{separated_list0, separated_list1};
-use nom::IResult;
 use crate::types::*;
-use std::collections::{HashMap, LinkedList};
+use nom::branch::alt;
+use nom::bytes::complete::{tag, take, take_while1};
+use nom::bytes::streaming::{is_not, take_while_m_n};
+use nom::character::complete::{char, multispace0, multispace1, one_of};
+use nom::combinator::{complete, map, map_opt, map_res, not, opt, recognize, value, verify};
 use nom::error::{self, ErrorKind};
+use nom::error::{FromExternalError, ParseError};
+use nom::multi::{fill, fold_many0, many0, many1};
+use nom::multi::{separated_list0, separated_list1};
+use nom::sequence::{delimited, pair, preceded, terminated, tuple};
+use nom::IResult;
+use std::collections::{HashMap, LinkedList};
 
 const DELIMITERS: &str = r#"();"'`|[]{}"#;
 const WHITESPACE: &str = " \t\n\r";
@@ -160,40 +159,33 @@ where
     delimited(char('"'), build_string, char('"'))(input)
 }
 
-/// A combinator that takes a parser `inner` and produces a parser that also consumes both leading and 
+/// A combinator that takes a parser `inner` and produces a parser that also consumes both leading and
 /// trailing whitespace, returning the output of `inner`.
-fn ws<'a, F: 'a, O, E: ParseError<&'a str>>(inner: F) -> impl FnMut(&'a str) -> IResult<&'a str, O, E>
-    where
+fn ws<'a, F: 'a, O, E: ParseError<&'a str>>(
+    inner: F,
+) -> impl FnMut(&'a str) -> IResult<&'a str, O, E>
+where
     F: Fn(&'a str) -> IResult<&'a str, O, E>,
 {
-    delimited(
-        multispace0,
-        inner,
-        multispace0
-    )
+    delimited(multispace0, inner, multispace0)
 }
 
-fn prec_ws<'a, F: 'a, O, E: ParseError<&'a str>>(inner: F) -> impl FnMut(&'a str) -> IResult<&'a str, O, E>
-    where
+fn prec_ws<'a, F: 'a, O, E: ParseError<&'a str>>(
+    inner: F,
+) -> impl FnMut(&'a str) -> IResult<&'a str, O, E>
+where
     F: Fn(&'a str) -> IResult<&'a str, O, E>,
 {
-    preceded(
-        multispace0,
-        inner,
-    )
+    preceded(multispace0, inner)
 }
 
 fn hex(input: &str) -> IResult<&str, isize> {
     map_res(
         preceded(
             alt((tag("#x"), tag("#X"))),
-            recognize(
-                many0(
-                    one_of("0123456789abcdefABCDEF")
-                )
-            )
+            recognize(many0(one_of("0123456789abcdefABCDEF"))),
         ),
-        |out: &str| isize::from_str_radix(out, 16)
+        |out: &str| isize::from_str_radix(out, 16),
     )(input)
 }
 
@@ -201,43 +193,26 @@ fn octal(input: &str) -> IResult<&str, isize> {
     map_res(
         preceded(
             alt((tag("#o"), tag("#O"))),
-            recognize(
-                many0(
-                    one_of("01234567")
-                )
-            )
+            recognize(many0(one_of("01234567"))),
         ),
-        |out: &str| isize::from_str_radix(out, 8)
+        |out: &str| isize::from_str_radix(out, 8),
     )(input)
 }
 
 fn binary(input: &str) -> IResult<&str, isize> {
     map_res(
-        preceded(
-            alt((tag("#b"), tag("#B"))),
-            recognize(
-                many0(
-                    one_of("01")
-                )
-            )
-        ),
-        |out: &str| isize::from_str_radix(out, 2)
+        preceded(alt((tag("#b"), tag("#B"))), recognize(many0(one_of("01")))),
+        |out: &str| isize::from_str_radix(out, 2),
     )(input)
 }
 
 fn decimal(input: &str) -> IResult<&str, isize> {
     map_res(
-        recognize(
-            pair(
-                opt(one_of("+-")),
-                recognize(
-                    many0(
-                        one_of("0123456789")
-                    )
-                )
-            )
-        ),
-        |out: &str| isize::from_str_radix(out, 10)
+        recognize(pair(
+            opt(one_of("+-")),
+            recognize(many0(one_of("0123456789"))),
+        )),
+        |out: &str| isize::from_str_radix(out, 10),
     )(input)
 }
 
@@ -247,13 +222,13 @@ pub fn int_parser(input: &str) -> IResult<&str, isize> {
 
 pub fn float_parser(input: &str) -> IResult<&str, f64> {
     map_res(
-        recognize(
-            tuple((
-                opt(one_of("+-")),
-                opt(decimal), char('.'), opt(decimal),
-                opt(tuple((one_of("eE"), decimal)))
-            ))
-        ),
+        recognize(tuple((
+            opt(one_of("+-")),
+            opt(decimal),
+            char('.'),
+            opt(decimal),
+            opt(tuple((one_of("eE"), decimal))),
+        ))),
         |out: &str| out.parse::<f64>(),
     )(input)
 }
@@ -269,23 +244,17 @@ pub fn ponga_int_parser(input: &str) -> IResult<&str, Ponga> {
 }
 
 pub fn num_parser(input: &str) -> IResult<&str, Ponga> {
-    alt((
-        complete(ponga_float_parser),
-        complete(ponga_int_parser),
-    ))(input)
+    alt((complete(ponga_float_parser), complete(ponga_int_parser)))(input)
 }
 
 pub fn array_parser(input: &str) -> IResult<&str, Ponga> {
     map(
         delimited(
             tag("#("),
-            separated_list0(
-                multispace1,
-                ponga_parser,
-            ),
-            preceded(multispace0, tag(")"))
+            separated_list0(multispace1, ponga_parser),
+            preceded(multispace0, tag(")")),
         ),
-        |out: Vec<Ponga>| -> Ponga { Ponga::Array(out) }
+        |out: Vec<Ponga>| -> Ponga { Ponga::Array(out) },
     )(input)
 }
 
@@ -293,15 +262,10 @@ pub fn list_parser(input: &str) -> IResult<&str, Ponga> {
     map(
         delimited(
             tag("'("),
-            separated_list0(
-                multispace1,
-                ponga_parser,
-            ),
-            preceded(multispace0, tag(")"))
+            separated_list0(multispace1, ponga_parser),
+            preceded(multispace0, tag(")")),
         ),
-        |out: Vec<Ponga>| -> Ponga {
-            Ponga::List(out.into_iter().collect())
-        }
+        |out: Vec<Ponga>| -> Ponga { Ponga::List(out.into_iter().collect()) },
     )(input)
 }
 
@@ -309,91 +273,57 @@ pub fn sexpr_parser(input: &str) -> IResult<&str, Ponga> {
     map(
         delimited(
             tag("("),
-            separated_list0(
-                multispace1,
-                ponga_parser,
-            ),
-            preceded(multispace0, tag(")"))
+            separated_list0(multispace1, ponga_parser),
+            preceded(multispace0, tag(")")),
         ),
-        |out: Vec<Ponga>| -> Ponga {
-            Ponga::Sexpr(out)
-        }
+        |out: Vec<Ponga>| -> Ponga { Ponga::Sexpr(out) },
     )(input)
 }
 
 pub fn non_delimiter(input: &str) -> IResult<&str, &str> {
-    take_while1(
-        |c: char| {
-            !(DELIMITERS.contains(&[c]) || WHITESPACE.contains(&[c]))
-        }
-    )(input)
+    take_while1(|c: char| !(DELIMITERS.contains(&[c]) || WHITESPACE.contains(&[c])))(input)
 }
 
 pub fn string_parser(input: &str) -> IResult<&str, Ponga> {
-    map(
-        parse_string,
-        |s: String| -> Ponga { Ponga::String(s) }
-    )(input)
+    map(parse_string, |s: String| -> Ponga { Ponga::String(s) })(input)
 }
 
 pub fn identifier_parser(input: &str) -> IResult<&str, Ponga> {
     map(
-        recognize(
-            tuple((
-                not(one_of("#,'")),
-                non_delimiter,
-            ))
-        ),
-        move |out: &str| -> Ponga {
-            Ponga::Identifier(out.to_string())
-        }
+        recognize(tuple((not(one_of("#,'")), non_delimiter))),
+        move |out: &str| -> Ponga { Ponga::Identifier(out.to_string()) },
     )(input)
 }
 
 pub fn symbol_parser(input: &str) -> IResult<&str, Ponga> {
     map_res(
-        preceded(
-            char('\''),
-            identifier_parser
-        ),
+        preceded(char('\''), identifier_parser),
         move |out: Ponga| -> Result<Ponga, ()> {
             let out = match out {
                 Ponga::Identifier(s) => s,
                 _ => return Err(()),
             };
             Ok(Ponga::Symbol(out))
-        }
+        },
     )(input)
 }
 
 pub fn true_parser(input: &str) -> IResult<&str, Ponga> {
-    map(
-        tag("#t"),
-        |_| Ponga::True
-    )(input)
+    map(tag("#t"), |_| Ponga::True)(input)
 }
 
 pub fn false_parser(input: &str) -> IResult<&str, Ponga> {
-    map(
-        tag("#f"),
-        |_| Ponga::False
-    )(input)
+    map(tag("#f"), |_| Ponga::False)(input)
 }
 
 pub fn bool_parser(input: &str) -> IResult<&str, Ponga> {
-    alt((
-        false_parser,
-        true_parser
-    ))(input)
+    alt((false_parser, true_parser))(input)
 }
 
 pub fn char_parser(input: &str) -> IResult<&str, Ponga> {
-    map(
-        preceded(
-            tag("#\\"), take(1usize)
-        ),
-        |x: &str| Ponga::Char(x.chars().nth(0).unwrap()),
-    )(input)
+    map(preceded(tag("#\\"), take(1usize)), |x: &str| {
+        Ponga::Char(x.chars().nth(0).unwrap())
+    })(input)
 }
 
 pub fn ponga_parser(input: &str) -> IResult<&str, Ponga> {
@@ -414,7 +344,5 @@ pub fn ponga_parser(input: &str) -> IResult<&str, Ponga> {
 }
 
 pub fn pongascript_parser(input: &str) -> IResult<&str, Vec<Ponga>> {
-    many1(
-        ponga_parser
-    )(input)
+    many1(ponga_parser)(input)
 }
