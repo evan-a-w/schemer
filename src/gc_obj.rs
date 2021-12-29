@@ -208,7 +208,7 @@ impl Drop for GcObj {
     fn drop(&mut self) {
         if self.get_flags().to_free {
             unsafe {
-                *Box::from_raw(self.data.as_ptr());
+                let _ = *Box::from_raw(self.data.as_ptr());
             }
         }
     }
