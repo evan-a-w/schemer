@@ -287,11 +287,9 @@ impl Runtime {
     pub fn eval(&mut self, pong: Ponga) -> RunRes<Ponga> {
         use Ponga::*;
         match pong {
-            Sexpr(mut v) => {
+            Sexpr(v) => {
                 if v.len() == 0 {
                     return Ok(Ponga::Null);
-                } else if v.len() == 1 {
-                    return self.func_eval(&v.pop().unwrap(), vec![]);
                 }
                 let mut iter = v.into_iter();
                 let func = iter.next().unwrap();

@@ -33,6 +33,8 @@ pub const FUNCS: &[(&str, fn(&mut Runtime, Vec<Ponga>) -> RunRes<Ponga>)] = &[
     ("begin", begin),
     ("display", disp),
     ("let", let_),
+    ("map", map_),
+    ("foldl", foldl),
 ];
 
 pub fn args_assert_len(args: &Vec<Ponga>, len: usize, name: &str) -> RunRes<()> {
@@ -215,15 +217,69 @@ pub fn car(runtime: &mut Runtime, mut args: Vec<Ponga>) -> RunRes<Ponga> {
 
 pub fn map_(runtime: &mut Runtime, mut args: Vec<Ponga>) -> RunRes<Ponga> {
     args_assert_len(&mut args, 2, "map")?;
-    let args = eval_args(runtime, args)?;
-    let first = &args[0];
-    if !args[0].is_func() {
-        return Err(RuntimeErr::TypeError(format!(
-            "first argument to map must be a function"
-        )));
+    let mut args = eval_args(runtime, args)?;
+    let iterable = args.pop().unwrap();
+    let func = args.pop().unwrap();
+    if !func.is_func() {
+        let mut fail = true;
+        if let Ponga::Ref(id) = &func {
+            let obj = runtime.get_id_obj_ref(*id)?;
+            let obj_ref = obj.borrow().unwrap();
+            if obj_ref.inner().is_func() {
+                fail = false;
+            }
+        }
+        if fail {
+            return Err(RuntimeErr::TypeError(format!(
+                "first argument to map must be a function"
+            )));
+        }
     }
-
-    Ok(Ponga::Null)
+    
+    match iterable {
+        Ponga::Ref(id) => {
+            let obj = runtime.get_id_obj_ref(id)?.borrow().unwrap();
+            let r = obj.inner();
+            match r {
+                Ponga::List(list) => {
+                    let cloned: LinkedList<Ponga> = list.clone();
+                    drop(list);
+                    drop(obj);
+                    let mut res = LinkedList::new();
+                    for i in cloned.into_iter() {
+                        res.push_back(runtime.func_eval(&func, vec![i])?);
+                    }
+                    let res_ref = runtime.gc.ponga_into_gc_ref(Ponga::List(res));
+                    Ok(res_ref)
+                }
+                Ponga::Array(arr) => {
+                    let cloned: Vec<Ponga> = arr.clone();
+                    drop(arr);
+                    drop(obj);
+                    let mut res = Vec::new();
+                    for i in cloned.into_iter() {
+                        res.push(runtime.func_eval(&func, vec![i])?);
+                    }
+                    let res_ref = runtime.gc.ponga_into_gc_ref(Ponga::Array(res));
+                    Ok(res_ref)
+                }
+                Ponga::Object(o) => {
+                    use std::collections::HashMap;
+                    let cloned: HashMap<String, Ponga> = o.clone();
+                    drop(o);
+                    drop(obj);
+                    let mut res = HashMap::new();
+                    for (k, v) in cloned.into_iter() {
+                        res.insert(k, runtime.func_eval(&func, vec![v])?);
+                    }
+                    let res_ref = runtime.gc.ponga_into_gc_ref(Ponga::Object(res));
+                    Ok(res_ref)
+                }
+                _ => Err(RuntimeErr::TypeError(format!("map requires an iterable"))),
+            }
+        }
+        _ => Err(RuntimeErr::TypeError(format!("map requires an iterable"))),
+    }
 }
 
 pub fn vector_query(runtime: &mut Runtime, mut args: Vec<Ponga>) -> RunRes<Ponga> {
@@ -604,6 +660,69 @@ pub fn begin(runtime: &mut Runtime, mut args: Vec<Ponga>) -> RunRes<Ponga> {
 
 pub fn disp(runtime: &mut Runtime, mut args: Vec<Ponga>) -> RunRes<Ponga> {
     args_assert_len(&args, 1, "display")?;
-    println!("{}", runtime.ponga_to_string(&args[0]));
+    let arg = runtime.eval(args.pop().unwrap())?;
+    println!("{}", runtime.ponga_to_string(&arg));
     Ok(Ponga::Null)
+}
+
+pub fn foldl(runtime: &mut Runtime, mut args: Vec<Ponga>) -> RunRes<Ponga> {
+    args_assert_len(&mut args, 3, "foldl")?;
+    let mut args = eval_args(runtime, args)?;
+    let iterable = args.pop().unwrap();
+    let mut acc = args.pop().unwrap();
+    let func = args.pop().unwrap();
+    if !func.is_func() {
+        let mut fail = true;
+        if let Ponga::Ref(id) = &func {
+            let obj = runtime.get_id_obj_ref(*id)?;
+            let obj_ref = obj.borrow().unwrap();
+            if obj_ref.inner().is_func() {
+                fail = false;
+            }
+        }
+        if fail {
+            return Err(RuntimeErr::TypeError(format!(
+                "first argument to map must be a function"
+            )));
+        }
+    }
+    
+    match iterable {
+        Ponga::Ref(id) => {
+            let obj = runtime.get_id_obj_ref(id)?.borrow().unwrap();
+            let r = obj.inner();
+            match r {
+                Ponga::List(list) => {
+                    let cloned: LinkedList<Ponga> = list.clone();
+                    drop(list);
+                    drop(obj);
+                    for i in cloned.into_iter() {
+                        acc = runtime.func_eval(&func, vec![acc, i])?;
+                    }
+                    Ok(acc)
+                }
+                Ponga::Array(arr) => {
+                    let cloned: Vec<Ponga> = arr.clone();
+                    drop(arr);
+                    drop(obj);
+                    for i in cloned.into_iter() {
+                        acc = runtime.func_eval(&func, vec![acc, i])?;
+                    }
+                    Ok(acc)
+                }
+                Ponga::Object(o) => {
+                    use std::collections::HashMap;
+                    let cloned: HashMap<String, Ponga> = o.clone();
+                    drop(o);
+                    drop(obj);
+                    for (k, v) in cloned.into_iter() {
+                        acc = runtime.func_eval(&func, vec![acc, v])?;
+                    }
+                    Ok(acc)
+                }
+                _ => Err(RuntimeErr::TypeError(format!("map requires an iterable"))),
+            }
+        }
+        _ => Err(RuntimeErr::TypeError(format!("map requires an iterable"))),
+    }
 }

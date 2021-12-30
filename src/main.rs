@@ -20,6 +20,5 @@ fn main() {
         return;
     }
     let file_name = args.nth(1).unwrap();
-    let res = run_file(&file_name);
-    println!("{:?}", res);
+    let _ = run_file(&file_name);
 }
