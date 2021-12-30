@@ -10,6 +10,11 @@ pub const FUNCS: &[(&str, fn(&mut Runtime, Vec<Ponga>) -> RunRes<Ponga>)] = &[
     ("car", car),
     ("cdr", cdr),
     ("vector?", vector_query),
+    ("lambda", lambda),
+    ("+", plus),
+    ("-", minus),
+    ("*", times),
+    ("/", div),
 ];
 
 pub fn args_assert_len(args: &Vec<Ponga>, len: usize, name: &str) -> RunRes<()> {
@@ -244,42 +249,85 @@ pub fn cdr(runtime: &mut Runtime, mut args: Vec<Ponga>) -> RunRes<Ponga> {
 }
 
 pub fn lambda(runtime: &mut Runtime, mut args: Vec<Ponga>) -> RunRes<Ponga> {
-    args_assert_len(&mut args, 2, "define")?;
+    args_assert_len(&mut args, 2, "lambda")?;
     let func = args.pop().unwrap();
     let arg = args.pop().unwrap();
     match arg {
         Ponga::Sexpr(v) => {
             let mut iter = v.into_iter();
-            let name = iter
-                .next()
-                .ok_or(RuntimeErr::TypeError(format!("define requires a name")))?;
-            let name = match name {
-                Ponga::Identifier(s) => s,
-                _ => {
-                    return Err(RuntimeErr::TypeError(format!(
-                        "define requires an identifier as the first argument"
-                    )))
-                }
-            };
             let mut new_args: Vec<String> = Vec::new();
             for i in iter {
                 match i {
                     Ponga::Identifier(s) => new_args.push(s),
                     _ => {
                         return Err(RuntimeErr::TypeError(format!(
-                            "arguments to defined functions must be identifiers"
+                            "arguments to lambda function must be identifiers"
                         )))
                     }
                 }
             }
             let id = runtime.gc.add_obj(func);
             let cfunc = Ponga::CFunc(new_args, id);
-            let id = runtime.gc.add_obj(cfunc);
-            runtime.bind_global(name, id);
-            Ok(Ponga::Null)
+            Ok(cfunc)
         }
         _ => Err(RuntimeErr::TypeError(format!(
             "first argument to define must be a S-Expression"
         ))),
+    }
+}
+
+pub fn plus(runtime: &mut Runtime, mut args: Vec<Ponga>) -> RunRes<Ponga> {
+    args_assert_len(&mut args, 2, "+")?;
+    let mut args = eval_args(runtime, args)?;
+    let snd = args.pop().unwrap();
+    let fst = args.pop().unwrap();
+    match fst {
+        Ponga::Number(n) => match snd {
+            Ponga::Number(m) => Ok(Ponga::Number(n.plus(m))),
+            _ => Err(RuntimeErr::TypeError(format!("+ requires two numbers"))),
+        },
+        _ => Err(RuntimeErr::TypeError(format!("+ requires two numbers"))),
+    }
+}
+
+pub fn minus(runtime: &mut Runtime, mut args: Vec<Ponga>) -> RunRes<Ponga> {
+    args_assert_len(&mut args, 2, "-")?;
+    let mut args = eval_args(runtime, args)?;
+    let snd = args.pop().unwrap();
+    let fst = args.pop().unwrap();
+    match fst {
+        Ponga::Number(n) => match snd {
+            Ponga::Number(m) => Ok(Ponga::Number(n.minus(m))),
+            _ => Err(RuntimeErr::TypeError(format!("- requires two numbers"))),
+        },
+        _ => Err(RuntimeErr::TypeError(format!("- requires two numbers"))),
+    }
+}
+
+pub fn times(runtime: &mut Runtime, mut args: Vec<Ponga>) -> RunRes<Ponga> {
+    args_assert_len(&mut args, 2, "*")?;
+    let mut args = eval_args(runtime, args)?;
+    let snd = args.pop().unwrap();
+    let fst = args.pop().unwrap();
+    match fst {
+        Ponga::Number(n) => match snd {
+            Ponga::Number(m) => Ok(Ponga::Number(n.times(m))),
+            _ => Err(RuntimeErr::TypeError(format!("* requires two numbers"))),
+        },
+        _ => Err(RuntimeErr::TypeError(format!("* requires two numbers"))),
+    }
+}
+
+pub fn div(runtime: &mut Runtime, mut args: Vec<Ponga>) -> RunRes<Ponga> {
+    args_assert_len(&mut args, 2, "/")?;
+    let mut args = eval_args(runtime, args)?;
+    let snd = args.pop().unwrap();
+    let fst = args.pop().unwrap();
+    match fst {
+        Ponga::Number(n) => match snd {
+            Ponga::Number(m) => Ok(Ponga::Number(n.div(m))),
+            _ => Err(RuntimeErr::TypeError(format!("/ requires two numbers"))),
+        },
+        _ => Err(RuntimeErr::TypeError(format!("/ requires two numbers"))),
     }
 }

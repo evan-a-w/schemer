@@ -7,7 +7,7 @@ pub type Id = usize;
 
 pub type FuncId = usize;
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Number {
     Int(isize),
     Float(f64),
@@ -171,5 +171,119 @@ impl<E> std::convert::From<nom::Err<E>> for RuntimeErr {
 impl std::convert::From<std::io::Error> for RuntimeErr {
     fn from(e: std::io::Error) -> Self {
         RuntimeErr::StdIo(format!("{:?}", e))
+    }
+}
+
+impl std::fmt::Display for Number {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> Result<(), std::fmt::Error> {
+        match self {
+            Number::Int(i) => write!(f, "{}", i),
+            Number::Float(fl) => write!(f, "{}", fl),
+            Number::Rational(r) => write!(f, "{}", r),
+        }
+    }
+}
+
+impl std::fmt::Display for Ponga {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> Result<(), std::fmt::Error> {
+        match self {
+            Ponga::Number(n) => write!(f, "{}", n),
+            Ponga::String(s) => write!(f, "\"{}\"", s),
+            Ponga::False => write!(f, "#f"),
+            Ponga::True => write!(f, "#t"),
+            Ponga::Char(c) => write!(f, "#\\{}", c),
+            Ponga::Null => write!(f, "()"),
+            Ponga::Symbol(s) => write!(f, "{}", s),
+            Ponga::Array(arr) => write!(f, "{:?}", arr),
+            Ponga::List(l) => write!(f, "{:?}", l),
+            Ponga::HFunc(id) => write!(f, "Internal function with id {}", id),
+            Ponga::CFunc(args, _) => write!(f, "Compound function with args {:?}", args),
+            Ponga::Sexpr(_) => write!(f, "S-expression"),
+            Ponga::Identifier(s) => write!(f, "Identifier {}", s),
+            Ponga::Ref(id) => write!(f, "Ref {}", id),
+            Ponga::Object(o) => write!(f, "{:?}", o),
+        }
+    }
+}
+
+impl Number {
+    pub fn plus(self, rhs: Number) -> Number {
+        match self {
+            Number::Int(i) => match rhs {
+                Number::Int(j) => Number::Int(i + j),
+                Number::Float(j) => Number::Float(i as f64 + j),
+                Number::Rational(j) => Number::Rational(Ratio::from(i) + j),
+            },
+            Number::Float(i) => match rhs {
+                Number::Int(j) => Number::Float(i + j as f64),
+                Number::Float(j) => Number::Float(i + j),
+                Number::Rational(j) => Number::Float(i + j.to_f64()),
+            },
+            Number::Rational(i) => match rhs {
+                Number::Int(j) => Number::Rational(i + Ratio::from(j)),
+                Number::Float(j) => Number::Float(i.to_f64() + j),
+                Number::Rational(j) => Number::Rational(i + j),
+            },
+        }
+    }
+
+    pub fn minus(self, rhs: Number) -> Number {
+        match self {
+            Number::Int(i) => match rhs {
+                Number::Int(j) => Number::Int(i - j),
+                Number::Float(j) => Number::Float(i as f64 - j),
+                Number::Rational(j) => Number::Rational(Ratio::from(i) - j),
+            },
+            Number::Float(i) => match rhs {
+                Number::Int(j) => Number::Float(i - j as f64),
+                Number::Float(j) => Number::Float(i - j),
+                Number::Rational(j) => Number::Float(i - j.to_f64()),
+            },
+            Number::Rational(i) => match rhs {
+                Number::Int(j) => Number::Rational(i - Ratio::from(j)),
+                Number::Float(j) => Number::Float(i.to_f64() - j),
+                Number::Rational(j) => Number::Rational(i - j),
+            },
+        }
+    }
+
+    pub fn times(self, rhs: Number) -> Number {
+        match self {
+            Number::Int(i) => match rhs {
+                Number::Int(j) => Number::Int(i * j),
+                Number::Float(j) => Number::Float(i as f64 * j),
+                Number::Rational(j) => Number::Rational(Ratio::from(i) * j),
+            },
+            Number::Float(i) => match rhs {
+                Number::Int(j) => Number::Float(i * j as f64),
+                Number::Float(j) => Number::Float(i * j),
+                Number::Rational(j) => Number::Float(i * j.to_f64()),
+            },
+            Number::Rational(i) => match rhs {
+                Number::Int(j) => Number::Rational(i * Ratio::from(j)),
+                Number::Float(j) => Number::Float(i.to_f64() * j),
+                Number::Rational(j) => Number::Rational(i * j),
+            },
+        }
+    }
+    
+    pub fn div(self, rhs: Number) -> Number {
+        match self {
+            Number::Int(i) => match rhs {
+                Number::Int(j) => Number::Int(i / j),
+                Number::Float(j) => Number::Float(i as f64 / j),
+                Number::Rational(j) => Number::Rational(Ratio::from(i) / j),
+            },
+            Number::Float(i) => match rhs {
+                Number::Int(j) => Number::Float(i / j as f64),
+                Number::Float(j) => Number::Float(i / j),
+                Number::Rational(j) => Number::Float(i / j.to_f64()),
+            },
+            Number::Rational(i) => match rhs {
+                Number::Int(j) => Number::Rational(i / Ratio::from(j)),
+                Number::Float(j) => Number::Float(i.to_f64() / j),
+                Number::Rational(j) => Number::Rational(i / j),
+            },
+        }
     }
 }

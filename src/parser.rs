@@ -1,4 +1,5 @@
 use crate::types::*;
+use crate::ratio::Ratio;
 use nom::branch::alt;
 use nom::bytes::complete::{tag, take, take_while1};
 use nom::bytes::streaming::{is_not, take_while_m_n};
@@ -233,6 +234,20 @@ pub fn float_parser(input: &str) -> IResult<&str, f64> {
     )(input)
 }
 
+pub fn ratio_parser(input: &str) -> IResult<&str, Ratio<isize>> {
+    map(
+        tuple((int_parser, char('/'), int_parser)),
+        |(numer, _, denom)| Ratio::new(numer, denom),
+    )(input)
+}
+
+pub fn ponga_ratio_parser(input: &str) -> IResult<&str, Ponga> {
+    map(
+        ratio_parser,
+        |ratio: Ratio<isize>| Ponga::Number(Number::Rational(ratio)),
+    )(input)
+}
+
 pub fn ponga_float_parser(input: &str) -> IResult<&str, Ponga> {
     let (a, res) = float_parser(input)?;
     Ok((a, Ponga::Number(Number::Float(res))))
@@ -244,7 +259,11 @@ pub fn ponga_int_parser(input: &str) -> IResult<&str, Ponga> {
 }
 
 pub fn num_parser(input: &str) -> IResult<&str, Ponga> {
-    alt((complete(ponga_float_parser), complete(ponga_int_parser)))(input)
+    alt((
+        complete(ponga_ratio_parser),
+        complete(ponga_float_parser),
+        complete(ponga_int_parser),
+    ))(input)
 }
 
 pub fn array_parser(input: &str) -> IResult<&str, Ponga> {

@@ -1,4 +1,4 @@
-use num_traits::Num;
+use num_traits::{Num, PrimInt};
 use std::cmp::{Eq, Ord, Ordering, PartialEq, PartialOrd};
 use std::ops::{Add, Div, Mul, Rem, Sub};
 
@@ -44,6 +44,13 @@ impl<T: Num + Ord + Copy> Ratio<T> {
         let div: T = gcd(abs_(self.numerator), abs_(self.denominator));
         self.numerator = self.numerator / div;
         self.denominator = self.denominator / div;
+    }
+
+}
+
+impl Ratio<isize> {
+    pub fn to_f64(self) -> f64 {
+        self.numerator as f64 / self.denominator as f64
     }
 }
 
@@ -110,5 +117,21 @@ impl<T: Num + Ord + Copy> Ord for Ratio<T> {
 impl<T: Num + Ord + Copy> PartialOrd for Ratio<T> {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
         Some(self.cmp(other))
+    }
+}
+
+impl std::convert::From<isize> for Ratio<isize> {
+    fn from(x: isize) -> Self {
+        Self::new(x, 1)
+    }
+}
+
+impl<T: Num + Ord + Copy + std::fmt::Display> std::fmt::Display for Ratio<T> {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> Result<(), std::fmt::Error> {
+        if self.denominator == T::one() {
+            write!(f, "{}", self.numerator)
+        } else {
+            write!(f, "{}/{}", self.numerator, self.denominator)
+        }
     }
 }

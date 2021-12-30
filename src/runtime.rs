@@ -1,13 +1,14 @@
 use crate::gc::*;
 use crate::gc_obj::*;
+use crate::parser::*;
 use crate::stdlib::*;
 use crate::types::*;
-use crate::parser::*;
+use itertools::Itertools;
 use std::cell::UnsafeCell;
 use std::collections::HashMap;
-use std::ptr::{self, NonNull};
 use std::fs::File;
 use std::io::prelude::*;
+use std::ptr::{self, NonNull};
 
 pub const DEBUG_PRINT: bool = false;
 
@@ -394,11 +395,46 @@ impl Runtime {
             _ => false,
         }
     }
+
+    pub fn ponga_to_string(&self, ponga: &Ponga) -> String {
+        match ponga {
+            Ponga::Number(n) => format!("{}", ponga),
+            Ponga::String(s) => format!("{}", ponga),
+            Ponga::False => format!("{}", ponga),
+            Ponga::True => format!("{}", ponga),
+            Ponga::Char(c) => format!("{}", ponga),
+            Ponga::Null => format!("{}", ponga),
+            Ponga::Symbol(s) => format!("{}", ponga),
+            Ponga::HFunc(id) => format!("Internal function with id {}", id),
+            Ponga::CFunc(args, _) => format!("Compound function with args {:?}", args),
+            Ponga::Sexpr(_) => format!("S-expression"),
+            Ponga::Identifier(s) => format!("Identifier {}", s),
+            Ponga::Ref(id) => {
+                let obj = self.get_id_obj_ref(*id).unwrap().borrow().unwrap();
+                self.ponga_to_string(obj.inner())
+            }
+            Ponga::Object(o) => {
+                format!(
+                    "'({})",
+                    o.iter()
+                        .map(|(k, v)| format!("({}, {})", k.to_string(), self.ponga_to_string(v)))
+                        .format(", ")
+                )
+            }
+            Ponga::Array(arr) => {
+                format!("#({})", arr.iter().map(|p| p.to_string()).format(", "))
+            }
+            Ponga::List(l) => {
+                format!("'({})", l.iter().map(|p| p.to_string()).format(", "))
+            }
+        }
+    }
 }
 
 pub fn run_str(s: &str) -> RunRes<Vec<RunRes<Ponga>>> {
     let mut runtime = Runtime::new();
     let parsed = pongascript_parser(s)?;
+    println!("{:?}", parsed);
     if parsed.0.len() != 0 {
         return Err(RuntimeErr::ParseError(format!(
             "Unexpected tokens: {:?}",
@@ -410,6 +446,11 @@ pub fn run_str(s: &str) -> RunRes<Vec<RunRes<Ponga>>> {
         .into_iter()
         .map(|x| runtime.eval(x))
         .collect::<Vec<RunRes<Ponga>>>();
+    let last = &evald[evald.len() - 1];
+    match last {
+        Ok(v) => println!("Program returned: {}", runtime.ponga_to_string(v)),
+        Err(e) => println!("Error: {:?}", e),
+    };
     Ok(evald)
 }
 
