@@ -9,6 +9,7 @@ pub const FUNCS: &[(&str, fn(&mut Runtime, Vec<Ponga>) -> RunRes<Ponga>)] = &[
     ("if", iff),
     ("car", car),
     ("cdr", cdr),
+    ("vector?", vector_query),
 ];
 
 pub fn args_assert_len(args: &Vec<Ponga>, len: usize, name: &str) -> RunRes<()> {
@@ -203,6 +204,24 @@ pub fn car(runtime: &mut Runtime, mut args: Vec<Ponga>) -> RunRes<Ponga> {
     }
 }
 
+pub fn map_(runtime: &mut Runtime, mut args: Vec<Ponga>)-> RunRes<Ponga> {
+    args_assert_len(&mut args, 2, "map")?;
+    let args = eval_args(runtime, args)?;
+    let first = &args[0];
+    if !args[0].is_func() {
+        return Err(RuntimeErr::TypeError(format!("first argument to map must be a function")));
+    }
+
+    Ok(Ponga::Null)
+}
+
+pub fn vector_query(runtime: &mut Runtime, mut args: Vec<Ponga>) -> RunRes<Ponga> {
+    args_assert_len(&mut args, 1, "vector?")?;
+    let mut args = eval_args(runtime, args)?;
+    let arg = args.pop().unwrap();
+    Ok(bool_to_ponga(runtime.is_vector(&arg)))
+}
+
 pub fn cdr(runtime: &mut Runtime, mut args: Vec<Ponga>) -> RunRes<Ponga> {
     args_assert_len(&mut args, 1, "cdr")?;
     let mut args = eval_args(runtime, args)?;
@@ -221,5 +240,46 @@ pub fn cdr(runtime: &mut Runtime, mut args: Vec<Ponga>) -> RunRes<Ponga> {
             }
         }
         _ => Err(RuntimeErr::TypeError(format!("car requires a list"))),
+    }
+}
+
+pub fn lambda(runtime: &mut Runtime, mut args: Vec<Ponga>) -> RunRes<Ponga> {
+    args_assert_len(&mut args, 2, "define")?;
+    let func = args.pop().unwrap();
+    let arg = args.pop().unwrap();
+    match arg {
+        Ponga::Sexpr(v) => {
+            let mut iter = v.into_iter();
+            let name = iter
+                .next()
+                .ok_or(RuntimeErr::TypeError(format!("define requires a name")))?;
+            let name = match name {
+                Ponga::Identifier(s) => s,
+                _ => {
+                    return Err(RuntimeErr::TypeError(format!(
+                        "define requires an identifier as the first argument"
+                    )))
+                }
+            };
+            let mut new_args: Vec<String> = Vec::new();
+            for i in iter {
+                match i {
+                    Ponga::Identifier(s) => new_args.push(s),
+                    _ => {
+                        return Err(RuntimeErr::TypeError(format!(
+                            "arguments to defined functions must be identifiers"
+                        )))
+                    }
+                }
+            }
+            let id = runtime.gc.add_obj(func);
+            let cfunc = Ponga::CFunc(new_args, id);
+            let id = runtime.gc.add_obj(cfunc);
+            runtime.bind_global(name, id);
+            Ok(Ponga::Null)
+        }
+        _ => Err(RuntimeErr::TypeError(format!(
+            "first argument to define must be a S-Expression"
+        ))),
     }
 }

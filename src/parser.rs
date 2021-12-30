@@ -344,5 +344,5 @@ pub fn ponga_parser(input: &str) -> IResult<&str, Ponga> {
 }
 
 pub fn pongascript_parser(input: &str) -> IResult<&str, Vec<Ponga>> {
-    many1(ponga_parser)(input)
+    terminated(many1(ponga_parser), multispace0)(input)
 }

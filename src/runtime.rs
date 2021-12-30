@@ -2,9 +2,12 @@ use crate::gc::*;
 use crate::gc_obj::*;
 use crate::stdlib::*;
 use crate::types::*;
+use crate::parser::*;
 use std::cell::UnsafeCell;
 use std::collections::HashMap;
 use std::ptr::{self, NonNull};
+use std::fs::File;
+use std::io::prelude::*;
 
 pub const DEBUG_PRINT: bool = false;
 
@@ -59,6 +62,16 @@ impl Runtime {
         self.gc.roots.clear();
     }
 
+    pub fn get_id_obj_ref(&self, id: Id) -> RunRes<&GcObj> {
+        self.gc
+            .ptrs
+            .get(&id)
+            .ok_or(RuntimeErr::ReferenceError(format!(
+                "Reference {} not found",
+                id
+            )))
+    }
+
     pub fn get_id_obj(&mut self, id: Id) -> RunRes<&mut GcObj> {
         self.gc
             .ptrs
@@ -87,6 +100,41 @@ impl Runtime {
                 identifier
             )))?;
         Ok(*id)
+    }
+
+    pub fn get_identifier_gc_obj_ref(&self, identifier: &str) -> RunRes<GcObj> {
+        let x = self.locals.get(identifier).map(|vec| vec[vec.len() - 1]);
+        match x {
+            Some(id) => {
+                let res = self.get_id_obj_ref(id)?;
+                return Ok(res.clone());
+            }
+            None => (),
+        }
+        let x = self.globals.get(identifier).cloned();
+        match x {
+            Some(id) => {
+                let res = self.get_id_obj_ref(id)?;
+                return Ok(res.clone());
+            }
+            None => (),
+        }
+        let id = self
+            .global_funcs
+            .get(identifier)
+            .ok_or(RuntimeErr::ReferenceError(format!(
+                "Identifier {} not found",
+                identifier
+            )))?;
+        Ok(GcObj {
+            data: NonNull::new(Box::into_raw(Box::new(Ponga::HFunc(*id)))).unwrap(),
+            flags: UnsafeCell::new(Flags {
+                marker: MarkerFlag::Unseen,
+                taken: TakenFlag::NotTaken,
+                to_free: true,
+            }),
+            id: *id,
+        })
     }
 
     pub fn get_identifier_gc_obj(&mut self, identifier: &str) -> RunRes<GcObj> {
@@ -233,4 +281,141 @@ impl Runtime {
             _ => Ok(pong),
         }
     }
+
+    pub fn is_func(&self, pong: &Ponga) -> bool {
+        match pong {
+            Ponga::HFunc(_) => true,
+            Ponga::CFunc(_, _) => true,
+            Ponga::Identifier(s) => {
+                let f = self.get_identifier_gc_obj_ref(s).unwrap();
+                let x = f.borrow().unwrap();
+                x.inner().is_func()
+            }
+            Ponga::Ref(id) => {
+                let obj = self.get_id_obj_ref(*id).unwrap().borrow().unwrap();
+                obj.inner().is_func()
+            }
+            _ => false,
+        }
+    }
+
+    pub fn is_list(&self, pong: &Ponga) -> bool {
+        match pong {
+            Ponga::List(_) => true,
+            Ponga::Identifier(s) => {
+                let f = self.get_identifier_gc_obj_ref(s).unwrap();
+                let x = f.borrow().unwrap();
+                x.inner().is_list()
+            }
+            Ponga::Ref(id) => {
+                let obj = self.get_id_obj_ref(*id).unwrap().borrow().unwrap();
+                obj.inner().is_list()
+            }
+            _ => false,
+        }
+    }
+
+    pub fn is_vector(&self, pong: &Ponga) -> bool {
+        match pong {
+            Ponga::Array(_) => true,
+            Ponga::Identifier(s) => {
+                let f = self.get_identifier_gc_obj_ref(s).unwrap();
+                let x = f.borrow().unwrap();
+                x.inner().is_vector()
+            }
+            Ponga::Ref(id) => {
+                let obj = self.get_id_obj_ref(*id).unwrap().borrow().unwrap();
+                obj.inner().is_vector()
+            }
+            _ => false,
+        }
+    }
+
+    pub fn is_char(&self, pong: &Ponga) -> bool {
+        match pong {
+            Ponga::Char(_) => true,
+            Ponga::Identifier(s) => {
+                let f = self.get_identifier_gc_obj_ref(s).unwrap();
+                let x = f.borrow().unwrap();
+                x.inner().is_char()
+            }
+            Ponga::Ref(id) => {
+                let obj = self.get_id_obj_ref(*id).unwrap().borrow().unwrap();
+                obj.inner().is_char()
+            }
+            _ => false,
+        }
+    }
+
+    pub fn is_number(&self, pong: &Ponga) -> bool {
+        match pong {
+            Ponga::Number(_) => true,
+            Ponga::Identifier(s) => {
+                let f = self.get_identifier_gc_obj_ref(s).unwrap();
+                let x = f.borrow().unwrap();
+                x.inner().is_number()
+            }
+            Ponga::Ref(id) => {
+                let obj = self.get_id_obj_ref(*id).unwrap().borrow().unwrap();
+                obj.inner().is_number()
+            }
+            _ => false,
+        }
+    }
+
+    pub fn is_string(&self, pong: &Ponga) -> bool {
+        match pong {
+            Ponga::String(_) => true,
+            Ponga::Identifier(s) => {
+                let f = self.get_identifier_gc_obj_ref(s).unwrap();
+                let x = f.borrow().unwrap();
+                x.inner().is_string()
+            }
+            Ponga::Ref(id) => {
+                let obj = self.get_id_obj_ref(*id).unwrap().borrow().unwrap();
+                obj.inner().is_string()
+            }
+            _ => false,
+        }
+    }
+
+    pub fn is_symbol(&self, pong: &Ponga) -> bool {
+        match pong {
+            Ponga::Symbol(_) => true,
+            Ponga::Identifier(s) => {
+                let f = self.get_identifier_gc_obj_ref(s).unwrap();
+                let x = f.borrow().unwrap();
+                x.inner().is_symbol()
+            }
+            Ponga::Ref(id) => {
+                let obj = self.get_id_obj_ref(*id).unwrap().borrow().unwrap();
+                obj.inner().is_symbol()
+            }
+            _ => false,
+        }
+    }
+}
+
+pub fn run_str(s: &str) -> RunRes<Vec<RunRes<Ponga>>> {
+    let mut runtime = Runtime::new();
+    let parsed = pongascript_parser(s)?;
+    if parsed.0.len() != 0 {
+        return Err(RuntimeErr::ParseError(format!(
+            "Unexpected tokens: {:?}",
+            parsed.0
+        )));
+    }
+    let evald = parsed
+        .1
+        .into_iter()
+        .map(|x| runtime.eval(x))
+        .collect::<Vec<RunRes<Ponga>>>();
+    Ok(evald)
+}
+
+pub fn run_file(s: &str) -> RunRes<Vec<RunRes<Ponga>>> {
+    let mut file = File::open(s)?;
+    let mut contents = String::new();
+    file.read_to_string(&mut contents)?;
+    run_str(&contents)
 }
