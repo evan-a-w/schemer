@@ -17,7 +17,7 @@ pub const FUNCS: &[(&str, fn(&mut Runtime, Vec<Ponga>) -> RunRes<Ponga>)] = &[
     ("*", times),
     ("/", div),
     ("eq?", eq),
-    ("eqv?", eq),
+    ("eqv?", teq),
     ("equal?", teq),
     ("=", peq),
     ("set!", set),
@@ -35,6 +35,7 @@ pub const FUNCS: &[(&str, fn(&mut Runtime, Vec<Ponga>) -> RunRes<Ponga>)] = &[
     ("let", let_),
     ("map", map_),
     ("foldl", foldl),
+    ("foldr", foldr),
     ("vector-length", vector_len),
     ("vector-ref", vector_ref),
     ("vector-append!", vector_append),
@@ -730,6 +731,68 @@ pub fn foldl(runtime: &mut Runtime, mut args: Vec<Ponga>) -> RunRes<Ponga> {
     }
 }
 
+pub fn foldr(runtime: &mut Runtime, mut args: Vec<Ponga>) -> RunRes<Ponga> {
+    args_assert_len(&mut args, 3, "foldl")?;
+    let mut args = eval_args(runtime, args)?;
+    let iterable = args.pop().unwrap();
+    let mut acc = args.pop().unwrap();
+    let func = args.pop().unwrap();
+    if !func.is_func() {
+        let mut fail = true;
+        if let Ponga::Ref(id) = &func {
+            let obj = runtime.get_id_obj_ref(*id)?;
+            let obj_ref = obj.borrow().unwrap();
+            if obj_ref.inner().is_func() {
+                fail = false;
+            }
+        }
+        if fail {
+            return Err(RuntimeErr::TypeError(format!(
+                "first argument to map must be a function"
+            )));
+        }
+    }
+    
+    match iterable {
+        Ponga::Ref(id) => {
+            let obj = runtime.get_id_obj_ref(id)?.borrow().unwrap();
+            let r = obj.inner();
+            match r {
+                Ponga::List(list) => {
+                    let cloned: LinkedList<Ponga> = list.clone();
+                    drop(list);
+                    drop(obj);
+                    for i in cloned.into_iter().rev() {
+                        acc = runtime.func_eval(&func, vec![i, acc])?;
+                    }
+                    Ok(acc)
+                }
+                Ponga::Array(arr) => {
+                    let cloned: Vec<Ponga> = arr.clone();
+                    drop(arr);
+                    drop(obj);
+                    for i in cloned.into_iter().rev() {
+                        acc = runtime.func_eval(&func, vec![i, acc])?;
+                    }
+                    Ok(acc)
+                }
+                Ponga::Object(o) => {
+                    use std::collections::HashMap;
+                    let cloned: HashMap<String, Ponga> = o.clone();
+                    drop(o);
+                    drop(obj);
+                    for (k, v) in cloned.into_iter() {
+                        acc = runtime.func_eval(&func, vec![v, acc])?;
+                    }
+                    Ok(acc)
+                }
+                _ => Err(RuntimeErr::TypeError(format!("map requires an iterable"))),
+            }
+        }
+        _ => Err(RuntimeErr::TypeError(format!("map requires an iterable"))),
+    }
+}
+
 pub fn vector_len(runtime: &mut Runtime, mut args: Vec<Ponga>) -> RunRes<Ponga> {
     args_assert_len(&args, 1, "vector-length")?;
     let arg = runtime.eval(args.pop().unwrap())?;
@@ -775,7 +838,7 @@ pub fn vector_ref(runtime: &mut Runtime, mut args: Vec<Ponga>) -> RunRes<Ponga> 
 }
 
 pub fn vector_append(runtime: &mut Runtime, mut args: Vec<Ponga>) -> RunRes<Ponga> {
-    args_assert_len(&args, 2, "vector-length")?;
+    args_assert_len(&args, 2, "vector-append!")?;
     let n = runtime.eval(args.pop().unwrap())?;
     let arg = runtime.eval(args.pop().unwrap())?;
     match arg {
@@ -787,14 +850,20 @@ pub fn vector_append(runtime: &mut Runtime, mut args: Vec<Ponga>) -> RunRes<Pong
                     v.push(n);
                     Ok(Ponga::Ref(id))
                 }
-                _ => Err(RuntimeErr::TypeError(format!("vector-length requires a vector"))),
+                _ => Err(RuntimeErr::TypeError(format!("vector-append! requires a vector"))),
             } 
         }
-        _ => Err(RuntimeErr::TypeError(format!("vector-length requires a vector"))),
+        _ => Err(RuntimeErr::TypeError(format!("vector-append! requires a vector"))),
     }
 }
 
 pub const RUNTIME_FUNCS: &str = "
 (define (even? x) 
         (= (modulo x 2) 0))
+
+(define (vector->list vec)
+        (foldr cons '() vec))
+
+(define (list->vector list)
+        (foldl vector-append! #() list))
 ";

@@ -407,3 +407,51 @@ pub fn test_closures() {
     println!("{:?}", evald);
     assert!(evald[2] == Ok(Ponga::Number(Number::Int(1))));
 }
+
+#[test]
+pub fn test_vec_to_list() {
+    use Ponga::*;
+    use RuntimeErr::*;
+
+    let parsed = pongascript_parser("
+(define vec #(1 2 3 4 5))
+(define list (vector->list vec))
+(display list)
+(eqv? list '(1 2 3 4 5))
+    ")
+    .unwrap();
+    let mut runtime = Runtime::new();
+    let evald = parsed
+        .1
+        .into_iter()
+        .map(|x| runtime.eval(x))
+        .collect::<Vec<RunRes<Ponga>>>();
+    println!("{:?}", evald);
+    assert!(evald[3] == Ok(Ponga::True));
+
+    runtime.collect_garbage();
+}
+
+#[test]
+pub fn test_list_to_vec() {
+    use Ponga::*;
+    use RuntimeErr::*;
+
+    let parsed = pongascript_parser("
+(define list '(1 2 3 4 5))
+(define vec (list->vector list))
+(display vec)
+(eqv? vec #(1 2 3 4 5))
+    ")
+    .unwrap();
+    let mut runtime = Runtime::new();
+    let evald = parsed
+        .1
+        .into_iter()
+        .map(|x| runtime.eval(x))
+        .collect::<Vec<RunRes<Ponga>>>();
+    println!("{:?}", evald);
+    assert!(evald[3] == Ok(Ponga::True));
+
+    runtime.collect_garbage();
+}
