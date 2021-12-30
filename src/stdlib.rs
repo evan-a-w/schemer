@@ -17,7 +17,6 @@ pub const FUNCS: &[(&str, fn(&mut Runtime, Vec<Ponga>) -> RunRes<Ponga>)] = &[
     ("*", times),
     ("/", div),
     ("eq?", eq),
-    // Should not be same but ceebs
     ("eqv?", eq),
     ("equal?", teq),
     ("=", peq),
