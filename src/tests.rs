@@ -383,3 +383,27 @@ pub fn test_basic_run() {
 
     runtime.collect_garbage();
 }
+
+#[test]
+pub fn test_closures() {
+    let parsed = pongascript_parser("
+(define count
+   (let ((next 0))
+     (lambda ()
+       (let ((v next))
+         (begin
+             (set! next (+ next 1))
+             v)))))
+(count)
+(count)
+")
+    .unwrap();
+    let mut runtime = Runtime::new();
+    let evald = parsed
+        .1
+        .into_iter()
+        .map(|x| runtime.eval(x))
+        .collect::<Vec<RunRes<Ponga>>>();
+    println!("{:?}", evald);
+    assert!(evald[2] == Ok(Ponga::Number(Number::Int(1))));
+}

@@ -136,7 +136,12 @@ impl Trace for Ponga {
                     i.trace(gc);
                 }
             }
-            Ponga::CFunc(_, id, _) => gc.ptrs.get(id).unwrap().trace(gc),
+            Ponga::CFunc(_, id, state) => {
+                gc.ptrs.get(id).unwrap().trace(gc);
+                for val in state.values() {
+                    val.trace(gc);
+                }
+            }
             Ponga::Number(_)
             | Ponga::String(_)
             | Ponga::True

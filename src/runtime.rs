@@ -128,7 +128,7 @@ impl Runtime {
 
     }
 
-    pub fn pop_local(&mut self, identifier: &str) {
+    pub fn pop_local(&mut self, identifier: &str) -> Ponga {
         let vec = self.locals.get_mut(identifier).unwrap();
         vec.pop();
         if vec.len() == 0 {
