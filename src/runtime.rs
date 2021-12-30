@@ -11,8 +11,6 @@ use std::fs::File;
 use std::io::prelude::*;
 use std::ptr::{self, NonNull};
 
-pub const DEBUG_PRINT: bool = false;
-
 pub type Namespace = HashMap<String, Ponga>;
 
 pub type PriorityNamespace = HashMap<String, Vec<Ponga>>;
@@ -128,12 +126,34 @@ impl Runtime {
 
     }
 
+    pub fn set_identifier(&mut self, identifier: &str, pong: Ponga) -> RunRes<()> {
+        match self.locals.get_mut(identifier) {
+            Some(v) => {
+                let l = v.len();
+                v[l - 1] = pong;
+                return Ok(());
+            }
+            None => (),
+        }
+        match self.globals.get_mut(identifier) {
+            Some(v) => {
+                *v = pong;
+                return Ok(());
+            }
+            None => (),
+        }
+        Err(RuntimeErr::ReferenceError(format!(
+                    "Identifier {} used in set is unknown", identifier
+        )))
+    }
+
     pub fn pop_local(&mut self, identifier: &str) -> Ponga {
         let vec = self.locals.get_mut(identifier).unwrap();
-        vec.pop();
+        let res = vec.pop().unwrap();
         if vec.len() == 0 {
             self.locals.remove(identifier);
         }
+        res
     }
 
     pub fn pop_identifier_obj(&mut self, identifier: &str) -> RunRes<(Ponga, WhereVar)> {
@@ -195,16 +215,28 @@ impl Runtime {
                 }
                 FUNCS[*id].1(self, args)
             }
-            Ponga::CFunc(names, id, state) => {
+            Ponga::CFunc(names, id, stateid) => {
                 args_assert_len(&args, names.len(), "func")?;
                 let args = eval_args(self, args)?;
-                let mut sexpr = self
+                let sexpr = self
                     .get_id_obj(*id)?
                     .borrow()
                     .unwrap()
                     .inner()
                     .clone();
 
+                let mut state = self.gc.take_id(*stateid).ok_or(
+                {
+                    // Error as fuck
+                    println!("FATAL: State not found:");
+                    self.gc.print_all_gc_ob();
+                    RuntimeErr::ReferenceError(format!(
+                        "State {} not found",
+                        stateid
+                    ))
+                }
+                )?.extract_map().unwrap();
+                
                 for (k, v) in state.iter() {
                     self.push_local(k, v.clone());
                 }
@@ -212,18 +244,28 @@ impl Runtime {
                 for (name, arg) in names.iter().zip(args.into_iter()) {
                     self.push_local(name, arg);
                 }
+
+                self.gc.add_obj_with_id(Ponga::Object(HashMap::new()), *stateid);
                 
-                let res = self.eval(sexpr)?;
+                let res = self.eval(sexpr);
 
                 for name in names.iter() {
                     self.pop_local(name);
                 }
 
+                let mut vals = Vec::new();
                 for name in state.keys() {
-                    self.pop_local(name);
+                    vals.push((name.clone(), self.pop_local(name)));
                 }
 
-                Ok(res)
+                for (name, val) in vals {
+                    state.insert(name, val);
+                }
+
+                let _ = self.gc.take_id(*stateid);
+                self.gc.add_obj_with_id(Ponga::Object(state), *stateid);
+
+                Ok(res?)
             }
             Ponga::Identifier(identifier) => {
                 let func = self.get_identifier_obj_ref(identifier)?.clone();
@@ -292,6 +334,9 @@ impl Runtime {
                 let obj = self.eval(obj)?;
                 self.push_whereval(&s, obj.clone(), wh);
                 Ok(obj)
+            }
+            cfunc@CFunc(_, _, _,) => {
+                Ok(self.gc.ponga_into_gc_ref(cfunc))
             }
             _ => Ok(pong),
         }
@@ -412,11 +457,22 @@ impl Runtime {
             Ponga::Char(c) => format!("{}", ponga),
             Ponga::Null => format!("{}", ponga),
             Ponga::Symbol(s) => format!("{}", ponga),
-            Ponga::HFunc(id) => format!("Internal function with id {}", id),
-            Ponga::CFunc(args, _, state) => format!("Compound function with args {:?}, state {:?}", args, state),
+            Ponga::HFunc(id) => format!("Internal function: {}", FUNCS[*id].0),
+            Ponga::CFunc(args, _, stateid) => {
+                let obj = self.get_id_obj_ref(*stateid).unwrap();
+                let obj_ref = obj.borrow().unwrap();
+                let state = obj_ref.inner();
+                let state_str = self.ponga_to_string(state);
+                format!("Compound function with args {:#?}, state {}", args, state_str)
+            }
             Ponga::Sexpr(a) => format!("S-expression: `{:?}`", a),
             Ponga::Identifier(s) => {
-                let obj = self.get_identifier_obj_ref(s).unwrap();
+                let obj = match self.get_identifier_obj_ref(s) {
+                    Ok(val) => val,
+                    Err(_) => {
+                        return format!("Identifier {} (not found)", s);
+                    }
+                };
                 self.ponga_to_string(obj)
             }
             Ponga::Ref(id) => {
@@ -432,10 +488,10 @@ impl Runtime {
                 )
             }
             Ponga::Array(arr) => {
-                format!("#({})", arr.iter().map(|p| p.to_string()).format(", "))
+                format!("#({})", arr.iter().map(|p| self.ponga_to_string(p)).format(", "))
             }
             Ponga::List(l) => {
-                format!("'({})", l.iter().map(|p| p.to_string()).format(", "))
+                format!("'({})", l.iter().map(|p| self.ponga_to_string(p)).format(", "))
             }
         }
     }

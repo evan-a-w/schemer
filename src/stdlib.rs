@@ -275,7 +275,10 @@ pub fn lambda(runtime: &mut Runtime, mut args: Vec<Ponga>) -> RunRes<Ponga> {
             }
             let id = runtime.gc.add_obj(func);
             let state = runtime.condense_locals();
-            let cfunc = Ponga::CFunc(new_args, id, state);
+            let stateid = runtime.gc.add_obj(Ponga::Object(state));
+            // DEBUG
+            println!("State id: {}", stateid);
+            let cfunc = Ponga::CFunc(new_args, id, stateid);
             Ok(cfunc)
         }
         _ => Err(RuntimeErr::TypeError(format!(
@@ -426,7 +429,7 @@ pub fn set(runtime: &mut Runtime, mut args: Vec<Ponga>) -> RunRes<Ponga> {
     match fst {
         Ponga::Identifier(s) => {
             let res = runtime.eval(snd)?;
-            runtime.bind_global(s, res);
+            runtime.set_identifier(&s, res)?;
             Ok(Ponga::Null)
         }
         _ => Err(RuntimeErr::TypeError(format!(

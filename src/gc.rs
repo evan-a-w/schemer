@@ -80,6 +80,12 @@ impl Gc {
     pub fn ponga_into_gc_ref(&mut self, data: Ponga) -> Ponga {
         Ponga::Ref(self.add_obj(data))
     }
+
+    pub fn print_all_gc_ob(&self) {
+        for obj in self.ptrs.values() {
+            println!("id: {}, val: {:?}", obj.id, unsafe { &*obj.data.as_ptr() });
+        }
+    }
 }
 
 impl GcObj {
@@ -136,11 +142,9 @@ impl Trace for Ponga {
                     i.trace(gc);
                 }
             }
-            Ponga::CFunc(_, id, state) => {
+            Ponga::CFunc(_, id, stateid) => {
                 gc.ptrs.get(id).unwrap().trace(gc);
-                for val in state.values() {
-                    val.trace(gc);
-                }
+                gc.ptrs.get(stateid).unwrap().trace(gc);
             }
             Ponga::Number(_)
             | Ponga::String(_)

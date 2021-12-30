@@ -26,7 +26,7 @@ pub enum Ponga {
     Object(HashMap<String, Ponga>),
     Array(Vec<Ponga>),
     Sexpr(Vec<Ponga>),
-    CFunc(Vec<String>, Id, HashMap<String, Ponga>),
+    CFunc(Vec<String>, Id, Id),
     HFunc(FuncId),
     True,
     False,
@@ -217,6 +217,20 @@ impl Ponga {
             _ => Err(RuntimeErr::TypeError(format!("Expected an identifier, got {:?}", self))),
         }
     }
+
+    pub fn extract_map(self) -> Option<HashMap<String, Ponga>> {
+        match self {
+            Ponga::Object(obj) => Some(obj),
+            _ => None,
+        }
+    }
+
+    pub fn extract_map_ref(&self) -> Option<&HashMap<String, Ponga>> {
+        match self {
+            Ponga::Object(obj) => Some(obj),
+            _ => None,
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -283,7 +297,7 @@ impl std::fmt::Display for Ponga {
             Ponga::List(l) => write!(f, "{:?}", l),
             Ponga::HFunc(id) => write!(f, "Internal function with id {}", id),
             Ponga::CFunc(args, _, state) => write!(f, "Compound function with args {:?} and state {:?}", args, state),
-            Ponga::Sexpr(_) => write!(f, "S-expression"),
+            Ponga::Sexpr(a) => write!(f, "S-expression {:?}", a),
             Ponga::Identifier(s) => write!(f, "Identifier {}", s),
             Ponga::Ref(id) => write!(f, "Ref {}", id),
             Ponga::Object(o) => write!(f, "{:?}", o),
