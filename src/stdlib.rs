@@ -274,7 +274,8 @@ pub fn lambda(runtime: &mut Runtime, mut args: Vec<Ponga>) -> RunRes<Ponga> {
                 }
             }
             let id = runtime.gc.add_obj(func);
-            let cfunc = Ponga::CFunc(new_args, id);
+            let state = runtime.condense_locals();
+            let cfunc = Ponga::CFunc(new_args, id, state);
             Ok(cfunc)
         }
         _ => Err(RuntimeErr::TypeError(format!(
@@ -545,17 +546,48 @@ pub fn cond(runtime: &mut Runtime, mut args: Vec<Ponga>) -> RunRes<Ponga> {
 
 pub fn let_(runtime: &mut Runtime, mut args: Vec<Ponga>) -> RunRes<Ponga> {
     args_assert_len(&args, 2, "let")?;
-    let pairs = args.pop().unwrap();
     let body = args.pop().unwrap();
+    let pairs = args.pop().unwrap();
 
     match pairs {
         Ponga::Sexpr(v) => {
+            let mut names = Vec::new();
+            for i in v.into_iter() {
+                match i {
+                    Ponga::Sexpr(v2) => {
+                        if v2.len() != 2 {
+                            return Err(RuntimeErr::TypeError(format!(
+                                "First arg to let must be S-Expr of S-Expr pairs"
+                            )));
+                        }
+                        let mut iter = v2.into_iter();
+                        let first = iter.next().unwrap();
+                        if !first.is_identifier() {
+                            return Err(RuntimeErr::TypeError(format!(
+                                "Name in let must be an identifier"
+                            )));
+                        }
+                        let second = runtime.eval(iter.next().unwrap())?;
+                        let name = first.extract_name()?;
+                        runtime.push_local(&name, second);
+                        names.push(name);
+                    }
+                    _ => return Err(RuntimeErr::TypeError(format!(
+                        "let requires S-Exprs inside first arg (not {:?})",
+                        i
+                    ))),
+                }
+            }
+            let res = runtime.eval(body)?;
+            for name in names.into_iter() {
+                runtime.pop_identifier_obj(&name)?;
+            }
+            Ok(res)
         }
-        _ => return Err(RuntimeErr::TypeError(format!(
+        _ => Err(RuntimeErr::TypeError(format!(
             "let requires S-Expr first arg"
         ))),
     }
-    Ok(Ponga::Null)
 }
 
 pub fn begin(runtime: &mut Runtime, mut args: Vec<Ponga>) -> RunRes<Ponga> {

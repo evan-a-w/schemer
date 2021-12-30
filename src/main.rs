@@ -21,4 +21,5 @@ fn main() {
     }
     let file_name = args.nth(1).unwrap();
     let res = run_file(&file_name);
+    println!("{:?}", res);
 }

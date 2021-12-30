@@ -136,7 +136,7 @@ impl Trace for Ponga {
                     i.trace(gc);
                 }
             }
-            Ponga::CFunc(_, id) => gc.ptrs.get(id).unwrap().trace(gc),
+            Ponga::CFunc(_, id, _) => gc.ptrs.get(id).unwrap().trace(gc),
             Ponga::Number(_)
             | Ponga::String(_)
             | Ponga::True

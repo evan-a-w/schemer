@@ -26,7 +26,7 @@ pub enum Ponga {
     Object(HashMap<String, Ponga>),
     Array(Vec<Ponga>),
     Sexpr(Vec<Ponga>),
-    CFunc(Vec<String>, Id),
+    CFunc(Vec<String>, Id, HashMap<String, Ponga>),
     HFunc(FuncId),
     True,
     False,
@@ -36,7 +36,7 @@ pub enum Ponga {
 impl Ponga {
     pub fn is_func(&self) -> bool {
         match self {
-            Ponga::CFunc(_, _) => true,
+            Ponga::CFunc(_, _, _) => true,
             Ponga::HFunc(_) => true,
             _ => false,
         }
@@ -282,7 +282,7 @@ impl std::fmt::Display for Ponga {
             Ponga::Array(arr) => write!(f, "{:?}", arr),
             Ponga::List(l) => write!(f, "{:?}", l),
             Ponga::HFunc(id) => write!(f, "Internal function with id {}", id),
-            Ponga::CFunc(args, _) => write!(f, "Compound function with args {:?}", args),
+            Ponga::CFunc(args, _, state) => write!(f, "Compound function with args {:?} and state {:?}", args, state),
             Ponga::Sexpr(_) => write!(f, "S-expression"),
             Ponga::Identifier(s) => write!(f, "Identifier {}", s),
             Ponga::Ref(id) => write!(f, "Ref {}", id),

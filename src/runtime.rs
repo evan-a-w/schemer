@@ -47,6 +47,14 @@ impl Runtime {
         }
     }
 
+    pub fn condense_locals(&self) -> HashMap<String, Ponga> {
+        let mut res = HashMap::new();
+        for (k, v) in self.locals.iter() {
+            res.insert(k.clone(), v[v.len() - 1].clone());
+        }
+        res
+    }
+
     pub fn bind_global(&mut self, s: String, pong: Ponga) {
         self.globals.insert(s, pong);
     }
@@ -120,10 +128,24 @@ impl Runtime {
 
     }
 
+    pub fn pop_local(&mut self, identifier: &str) {
+        let vec = self.locals.get_mut(identifier).unwrap();
+        vec.pop();
+        if vec.len() == 0 {
+            self.locals.remove(identifier);
+        }
+    }
+
     pub fn pop_identifier_obj(&mut self, identifier: &str) -> RunRes<(Ponga, WhereVar)> {
-        match self.locals.get_mut(identifier) {
+        let entry = self.locals.get_mut(identifier);
+        match entry {
             Some(v) => {
-                return Ok((v.pop().unwrap(), WhereVar::Local))
+                let res = v.pop().unwrap();
+                if v.is_empty() {
+                    drop(v);
+                    self.locals.remove(identifier);
+                }
+                return Ok((res, WhereVar::Local));
             }
             None => (),
         }
@@ -173,7 +195,7 @@ impl Runtime {
                 }
                 FUNCS[*id].1(self, args)
             }
-            Ponga::CFunc(names, id) => {
+            Ponga::CFunc(names, id, state) => {
                 args_assert_len(&args, names.len(), "func")?;
                 let args = eval_args(self, args)?;
                 let mut sexpr = self
@@ -183,6 +205,10 @@ impl Runtime {
                     .inner()
                     .clone();
 
+                for (k, v) in state.iter() {
+                    self.push_local(k, v.clone());
+                }
+
                 for (name, arg) in names.iter().zip(args.into_iter()) {
                     self.push_local(name, arg);
                 }
@@ -190,11 +216,11 @@ impl Runtime {
                 let res = self.eval(sexpr)?;
 
                 for name in names.iter() {
-                    let vec = self.locals.get_mut(name).unwrap();
-                    vec.pop();
-                    if vec.len() == 0 {
-                        self.locals.remove(name);
-                    }
+                    self.pop_local(name);
+                }
+
+                for name in state.keys() {
+                    self.pop_local(name);
                 }
 
                 Ok(res)
@@ -274,7 +300,7 @@ impl Runtime {
     pub fn is_func(&self, pong: &Ponga) -> bool {
         match pong {
             Ponga::HFunc(_) => true,
-            Ponga::CFunc(_, _) => true,
+            Ponga::CFunc(_, _, _) => true,
             Ponga::Identifier(s) => {
                 let f = self.get_identifier_obj_ref(s).unwrap();
                 f.is_func()
@@ -387,7 +413,7 @@ impl Runtime {
             Ponga::Null => format!("{}", ponga),
             Ponga::Symbol(s) => format!("{}", ponga),
             Ponga::HFunc(id) => format!("Internal function with id {}", id),
-            Ponga::CFunc(args, _) => format!("Compound function with args {:?}", args),
+            Ponga::CFunc(args, _, state) => format!("Compound function with args {:?}, state {:?}", args, state),
             Ponga::Sexpr(a) => format!("S-expression: `{:?}`", a),
             Ponga::Identifier(s) => {
                 let obj = self.get_identifier_obj_ref(s).unwrap();
