@@ -6,6 +6,7 @@ mod runtime;
 mod stdlib;
 mod tests;
 mod types;
+mod take_obj;
 
 fn run_tests_in_main() {
     tests::test_basic_garbage_collection_manual_binding();
@@ -20,5 +21,4 @@ fn main() {
     }
     let file_name = args.nth(1).unwrap();
     let res = run_file(&file_name);
-    println!("{:?}", res);
 }

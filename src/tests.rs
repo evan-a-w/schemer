@@ -16,8 +16,8 @@ pub fn test_basic_garbage_collection_manual_binding() {
         Ponga::Object(HashMap::new()),
     ]));
 
-    runtime.bind_global("hi".to_string(), id1);
-    runtime.bind_global("bye".to_string(), id2);
+    runtime.bind_global("hi".to_string(), Ponga::Ref(id1));
+    runtime.bind_global("bye".to_string(), Ponga::Ref(id2));
     runtime.collect_garbage();
 
     assert!(runtime.gc.ptrs.len() == 2);
@@ -366,7 +366,10 @@ pub fn test_basic_run() {
          accu
          (foldl func (func (car alist) accu) (cdr alist))))
 
-     (foldl cons '() '(1 2 3 4 5))",
+     (define i (foldl cons '() '(1 2 3 4 5)))
+     (display i)
+     (equal? i '(5 4 3 2 1))
+     ",
     )
     .unwrap();
     let mut runtime = Runtime::new();
@@ -375,15 +378,8 @@ pub fn test_basic_run() {
         .into_iter()
         .map(|x| runtime.eval(x))
         .collect::<Vec<RunRes<Ponga>>>();
-    // for now
-    assert_eq!(
-        evald,
-        vec![
-            Err(ReferenceError("Identifier foldl not found".to_string())),
-            Ok(Null),
-            Ok(Ref(12))
-        ]
-    );
+    println!("{:?}", evald);
+    assert!(evald[4] == Ok(Ponga::True));
 
     runtime.collect_garbage();
 }

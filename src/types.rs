@@ -161,6 +161,62 @@ impl Ponga {
             _ => Err(RuntimeErr::TypeError(format!("to number: {:?} is not a number", self))),
         }
     }
+
+    pub fn extract_id(&self) -> RunRes<Id> {
+        match self {
+            Ponga::Ref(id) => Ok(id.clone()),
+            _ => Err(RuntimeErr::TypeError(
+                "Expected a reference".to_string(),
+            )),
+        }
+    }
+
+    pub fn get_list(&mut self) -> RunRes<&mut LinkedList<Ponga>> {
+        match self {
+            Ponga::List(list) => Ok(list),
+            _ => Err(RuntimeErr::TypeError(format!("get list: {:?} is not a list", self))),
+        }
+    }
+
+    pub fn get_array(self) -> RunRes<Vec<Ponga>> {
+        match self {
+            Ponga::Array(array) => Ok(array),
+            Ponga::Sexpr(array) => Ok(array),
+            _ => Err(RuntimeErr::TypeError(format!("get array: {:?} is not an array", self))),
+        }
+    }
+
+    pub fn map_replace(self, name: &str, val: &Ponga) -> Ponga {
+        match self {
+            Ponga::Identifier(s) => {
+                if s == name {
+                    val.clone()
+                } else {
+                    Ponga::Identifier(s)
+                }
+            }
+            Ponga::Sexpr(arr) => {
+                Ponga::Sexpr(arr.into_iter().map(|v| v.map_replace(name, val)).collect())
+            }
+            Ponga::Array(arr) => {
+                Ponga::Array(arr.into_iter().map(|v| v.map_replace(name, val)).collect())
+            }
+            Ponga::List(l) => {
+                Ponga::List(l.into_iter().map(|v| v.map_replace(name, val)).collect())
+            }
+            Ponga::Object(obj) => {
+                Ponga::Object(obj.into_iter().map(|(k, v)| (k, v.map_replace(name, val))).collect())
+            }
+            _ => self,
+        }
+    }
+
+    pub fn extract_name(self) -> RunRes<String> {
+        match self {
+            Ponga::Identifier(s) => Ok(s),
+            _ => Err(RuntimeErr::TypeError(format!("Expected an identifier, got {:?}", self))),
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]

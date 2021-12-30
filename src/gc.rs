@@ -59,17 +59,11 @@ impl Gc {
     pub fn add_obj(&mut self, data: Ponga) -> Id {
         let obj = GcObj::new(self, data);
         let id = obj.id;
-        if DEBUG_PRINT {
-            println!("Adding {} with {:?}", id, obj.borrow().unwrap().inner());
-        }
         self.ptrs.insert(obj.id, obj);
         id
     }
 
     pub fn add_obj_with_id(&mut self, data: Ponga, id: Id) {
-        if DEBUG_PRINT {
-            println!("Forcible Adding {} with {:?}", id, data);
-        }
         let obj = GcObj {
             data: NonNull::new(Box::into_raw(Box::new(data))).unwrap(),
             flags: UnsafeCell::new(Flags {

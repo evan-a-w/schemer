@@ -6,15 +6,16 @@ use crate::types::*;
 use itertools::Itertools;
 use std::cell::UnsafeCell;
 use std::collections::HashMap;
+use std::collections::LinkedList;
 use std::fs::File;
 use std::io::prelude::*;
 use std::ptr::{self, NonNull};
 
 pub const DEBUG_PRINT: bool = false;
 
-pub type Namespace = HashMap<String, Id>;
+pub type Namespace = HashMap<String, Ponga>;
 
-pub type PriorityNamespace = HashMap<String, Vec<Id>>;
+pub type PriorityNamespace = HashMap<String, Vec<Ponga>>;
 
 pub struct Runtime {
     pub globals: Namespace,
@@ -23,13 +24,19 @@ pub struct Runtime {
     pub gc: Gc,
 }
 
+pub enum WhereVar {
+    Global,
+    Local,
+    GlobalFunc,
+}
+
 impl Runtime {
     pub fn new() -> Self {
         let mut global_funcs = Namespace::new();
         let mut gc = Gc::new();
 
-        for val in FUNCS.iter() {
-            global_funcs.insert(val.0.to_string(), gc.get_new_id());
+        for (i, val) in FUNCS.iter().enumerate() {
+            global_funcs.insert(val.0.to_string(), Ponga::HFunc(i));
         }
 
         Self {
@@ -40,8 +47,8 @@ impl Runtime {
         }
     }
 
-    pub fn bind_global(&mut self, s: String, id: Id) {
-        self.globals.insert(s, id);
+    pub fn bind_global(&mut self, s: String, pong: Ponga) {
+        self.globals.insert(s, pong);
     }
 
     pub fn unbind_global(&mut self, s: &str) {
@@ -49,10 +56,19 @@ impl Runtime {
     }
 
     pub fn add_roots_to_gc(&mut self) {
-        self.gc.roots = self.globals.values().cloned().collect();
+        self.gc.roots = std::collections::HashSet::new();
+        for v in self.globals.values() {
+            match v {
+                Ponga::Ref(id) => { self.gc.roots.insert(*id); },
+                _ => (),
+            }
+        }
         for vec in self.locals.values() {
             for i in vec.iter() {
-                self.gc.roots.insert(*i);
+                match i {
+                    Ponga::Ref(id) => { self.gc.roots.insert(*id); },
+                    _ => (),
+                }
             }
         }
     }
@@ -83,98 +99,70 @@ impl Runtime {
             )))
     }
 
-    pub fn get_identifier_id(&mut self, identifier: &str) -> RunRes<Id> {
-        let x = self.locals.get(identifier).map(|vec| vec[vec.len() - 1]);
-        match x {
-            Some(id) => return Ok(id),
+    pub fn get_identifier_obj_ref(&self, identifier: &str) -> RunRes<&Ponga> {
+        match self.locals.get(identifier) {
+            Some(v) => {
+                return Ok(&v[v.len() - 1])
+            }
             None => (),
         }
         match self.globals.get(identifier) {
-            Some(id) => return Ok(*id),
+            Some(v) => return Ok(v),
             None => (),
         }
-        let id = self
-            .global_funcs
-            .get(identifier)
-            .ok_or(RuntimeErr::ReferenceError(format!(
+        match self.global_funcs.get(identifier) {
+            Some(v) => Ok(v),
+            None => Err(RuntimeErr::ReferenceError(format!(
                 "Identifier {} not found",
                 identifier
-            )))?;
-        Ok(*id)
+            )))
+        }
+
     }
 
-    pub fn get_identifier_gc_obj_ref(&self, identifier: &str) -> RunRes<GcObj> {
-        let x = self.locals.get(identifier).map(|vec| vec[vec.len() - 1]);
-        match x {
-            Some(id) => {
-                let res = self.get_id_obj_ref(id)?;
-                return Ok(res.clone());
+    pub fn pop_identifier_obj(&mut self, identifier: &str) -> RunRes<(Ponga, WhereVar)> {
+        match self.locals.get_mut(identifier) {
+            Some(v) => {
+                return Ok((v.pop().unwrap(), WhereVar::Local))
             }
             None => (),
         }
-        let x = self.globals.get(identifier).cloned();
-        match x {
-            Some(id) => {
-                let res = self.get_id_obj_ref(id)?;
-                return Ok(res.clone());
-            }
+        match self.globals.remove_entry(identifier) {
+            Some((_, v)) => return Ok((v, WhereVar::Global)),
             None => (),
         }
-        let id = self
-            .global_funcs
-            .get(identifier)
-            .ok_or(RuntimeErr::ReferenceError(format!(
+        match self.global_funcs.remove_entry(identifier) {
+            Some((_, v)) => Ok((v, WhereVar::GlobalFunc)),
+            None => Err(RuntimeErr::ReferenceError(format!(
                 "Identifier {} not found",
                 identifier
-            )))?;
-        Ok(GcObj {
-            data: NonNull::new(Box::into_raw(Box::new(Ponga::HFunc(*id)))).unwrap(),
-            flags: UnsafeCell::new(Flags {
-                marker: MarkerFlag::Unseen,
-                taken: TakenFlag::NotTaken,
-                to_free: true,
-            }),
-            id: *id,
-        })
+            )))
+        }
+
     }
 
-    pub fn get_identifier_gc_obj(&mut self, identifier: &str) -> RunRes<GcObj> {
-        let x = self.locals.get(identifier).map(|vec| vec[vec.len() - 1]);
-        match x {
-            Some(id) => {
-                let res = self.get_id_obj(id)?;
-                return Ok(res.clone());
+    pub fn push_whereval(&mut self, identifier: &str, pong: Ponga, wh: WhereVar) {
+        match wh {
+            WhereVar::Global => {
+                self.globals.insert(identifier.to_string(), pong);
             }
-            None => (),
-        }
-        let x = self.globals.get(identifier).cloned();
-        match x {
-            Some(id) => {
-                let res = self.get_id_obj(id)?;
-                return Ok(res.clone());
+            WhereVar::Local => {
+                self.push_local(identifier, pong);
             }
-            None => (),
+            WhereVar::GlobalFunc => {
+                self.global_funcs.insert(identifier.to_string(), pong);
+            }
         }
-        let id = self
-            .global_funcs
-            .get(identifier)
-            .ok_or(RuntimeErr::ReferenceError(format!(
-                "Identifier {} not found",
-                identifier
-            )))?;
-        Ok(GcObj {
-            data: NonNull::new(Box::into_raw(Box::new(Ponga::HFunc(*id)))).unwrap(),
-            flags: UnsafeCell::new(Flags {
-                marker: MarkerFlag::Unseen,
-                taken: TakenFlag::NotTaken,
-                to_free: true,
-            }),
-            id: *id,
-        })
+    }
+
+    pub fn push_local(&mut self, identifier: &str, pong: Ponga) {
+        self.locals
+            .entry(identifier.to_string())
+            .or_insert(Vec::new())
+            .push(pong);
     }
 
     pub fn func_eval(&mut self, pong: &Ponga, args: Vec<Ponga>) -> RunRes<Ponga> {
-        println!("Evaluating func {:?} with args: {}", pong, args.iter().format(", "));
         match pong {
             Ponga::HFunc(id) => {
                 if *id >= FUNCS.len() {
@@ -188,19 +176,17 @@ impl Runtime {
             Ponga::CFunc(names, id) => {
                 args_assert_len(&args, names.len(), "func")?;
                 let args = eval_args(self, args)?;
+                let mut sexpr = self
+                    .get_id_obj(*id)?
+                    .borrow()
+                    .unwrap()
+                    .inner()
+                    .clone();
+
                 for (name, arg) in names.iter().zip(args.into_iter()) {
-                    if DEBUG_PRINT {
-                        println!("Binding {} to {:?}", name, arg);
-                    }
-                    let n_id = self.gc.add_obj(arg);
-                    self.locals
-                        .entry(name.to_string())
-                        .or_insert(Vec::new())
-                        .push(n_id);
+                    self.push_local(name, arg);
                 }
-
-                let sexpr = self.get_id_obj(*id)?.borrow().unwrap().inner().clone();
-
+                
                 let res = self.eval(sexpr)?;
 
                 for name in names.iter() {
@@ -214,9 +200,8 @@ impl Runtime {
                 Ok(res)
             }
             Ponga::Identifier(identifier) => {
-                let mut obj = self.get_identifier_gc_obj(identifier)?;
-                let res = self.func_eval(obj.borrow_mut().unwrap().inner(), args)?;
-                Ok(res)
+                let func = self.get_identifier_obj_ref(identifier)?.clone();
+                self.func_eval(&func, args)
             }
             Ponga::Ref(id) => {
                 let mut obj = self.get_id_obj(*id)?.clone();
@@ -230,14 +215,13 @@ impl Runtime {
     }
 
     pub fn eval(&mut self, pong: Ponga) -> RunRes<Ponga> {
-        //println!("Evaluating pong {:?}", pong);
         use Ponga::*;
         match pong {
-            Sexpr(v) => {
+            Sexpr(mut v) => {
                 if v.len() == 0 {
                     return Ok(Ponga::Null);
                 } else if v.len() == 1 {
-                    return self.eval(v.into_iter().next().unwrap());
+                    return self.func_eval(&v.pop().unwrap(), vec![]);
                 }
                 let mut iter = v.into_iter();
                 let func = iter.next().unwrap();
@@ -249,15 +233,14 @@ impl Runtime {
                 for pong in arr {
                     res.push(self.eval(pong)?);
                 }
-                Ok(Ponga::Array(res))
+                Ok(Ponga::Ref(self.gc.add_obj(Ponga::Array(res))))
             }
             List(l) => {
-                use std::collections::LinkedList;
                 let mut res = LinkedList::new();
                 for pong in l {
                     res.push_back(self.eval(pong)?);
                 }
-                Ok(Ponga::List(res))
+                Ok(Ponga::Ref(self.gc.add_obj(Ponga::List(res))))
             }
             Ref(id) => {
                 let obj = self
@@ -267,6 +250,7 @@ impl Runtime {
                         "Reference {} not found",
                         id
                     )))?;
+
                 let res = self.eval(obj)?;
 
                 if res.is_copy() {
@@ -274,12 +258,14 @@ impl Runtime {
                     Ok(res)
                 } else {
                     self.gc.add_obj_with_id(res, id);
-                    Ok(Ponga::Ref(id))
+                    self.eval(Ponga::Ref(id))
                 }
             }
             Identifier(s) => {
-                let id = self.get_identifier_id(&s)?;
-                self.eval(Ponga::Ref(id))
+                let (obj, wh) = self.pop_identifier_obj(&s)?;
+                let obj = self.eval(obj)?;
+                self.push_whereval(&s, obj.clone(), wh);
+                Ok(obj)
             }
             _ => Ok(pong),
         }
@@ -290,9 +276,8 @@ impl Runtime {
             Ponga::HFunc(_) => true,
             Ponga::CFunc(_, _) => true,
             Ponga::Identifier(s) => {
-                let f = self.get_identifier_gc_obj_ref(s).unwrap();
-                let x = f.borrow().unwrap();
-                x.inner().is_func()
+                let f = self.get_identifier_obj_ref(s).unwrap();
+                f.is_func()
             }
             Ponga::Ref(id) => {
                 let obj = self.get_id_obj_ref(*id).unwrap().borrow().unwrap();
@@ -306,9 +291,8 @@ impl Runtime {
         match pong {
             Ponga::List(_) => true,
             Ponga::Identifier(s) => {
-                let f = self.get_identifier_gc_obj_ref(s).unwrap();
-                let x = f.borrow().unwrap();
-                x.inner().is_list()
+                let f = self.get_identifier_obj_ref(s).unwrap();
+                self.is_list(f)
             }
             Ponga::Ref(id) => {
                 let obj = self.get_id_obj_ref(*id).unwrap().borrow().unwrap();
@@ -322,9 +306,8 @@ impl Runtime {
         match pong {
             Ponga::Array(_) => true,
             Ponga::Identifier(s) => {
-                let f = self.get_identifier_gc_obj_ref(s).unwrap();
-                let x = f.borrow().unwrap();
-                x.inner().is_vector()
+                let f = self.get_identifier_obj_ref(s).unwrap();
+                self.is_vector(f)
             }
             Ponga::Ref(id) => {
                 let obj = self.get_id_obj_ref(*id).unwrap().borrow().unwrap();
@@ -338,9 +321,8 @@ impl Runtime {
         match pong {
             Ponga::Char(_) => true,
             Ponga::Identifier(s) => {
-                let f = self.get_identifier_gc_obj_ref(s).unwrap();
-                let x = f.borrow().unwrap();
-                x.inner().is_char()
+                let f = self.get_identifier_obj_ref(s).unwrap();
+                self.is_char(f)
             }
             Ponga::Ref(id) => {
                 let obj = self.get_id_obj_ref(*id).unwrap().borrow().unwrap();
@@ -354,9 +336,8 @@ impl Runtime {
         match pong {
             Ponga::Number(_) => true,
             Ponga::Identifier(s) => {
-                let f = self.get_identifier_gc_obj_ref(s).unwrap();
-                let x = f.borrow().unwrap();
-                x.inner().is_number()
+                let f = self.get_identifier_obj_ref(s).unwrap();
+                self.is_number(f)
             }
             Ponga::Ref(id) => {
                 let obj = self.get_id_obj_ref(*id).unwrap().borrow().unwrap();
@@ -370,9 +351,8 @@ impl Runtime {
         match pong {
             Ponga::String(_) => true,
             Ponga::Identifier(s) => {
-                let f = self.get_identifier_gc_obj_ref(s).unwrap();
-                let x = f.borrow().unwrap();
-                x.inner().is_string()
+                let f = self.get_identifier_obj_ref(s).unwrap();
+                self.is_string(f)
             }
             Ponga::Ref(id) => {
                 let obj = self.get_id_obj_ref(*id).unwrap().borrow().unwrap();
@@ -386,9 +366,8 @@ impl Runtime {
         match pong {
             Ponga::Symbol(_) => true,
             Ponga::Identifier(s) => {
-                let f = self.get_identifier_gc_obj_ref(s).unwrap();
-                let x = f.borrow().unwrap();
-                x.inner().is_symbol()
+                let f = self.get_identifier_obj_ref(s).unwrap();
+                self.is_symbol(f)
             }
             Ponga::Ref(id) => {
                 let obj = self.get_id_obj_ref(*id).unwrap().borrow().unwrap();
@@ -409,8 +388,11 @@ impl Runtime {
             Ponga::Symbol(s) => format!("{}", ponga),
             Ponga::HFunc(id) => format!("Internal function with id {}", id),
             Ponga::CFunc(args, _) => format!("Compound function with args {:?}", args),
-            Ponga::Sexpr(_) => format!("S-expression"),
-            Ponga::Identifier(s) => format!("Identifier {}", s),
+            Ponga::Sexpr(a) => format!("S-expression: `{:?}`", a),
+            Ponga::Identifier(s) => {
+                let obj = self.get_identifier_obj_ref(s).unwrap();
+                self.ponga_to_string(obj)
+            }
             Ponga::Ref(id) => {
                 let obj = self.get_id_obj_ref(*id).unwrap().borrow().unwrap();
                 self.ponga_to_string(obj.inner())
