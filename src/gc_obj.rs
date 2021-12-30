@@ -163,6 +163,10 @@ impl GcObj {
         }
     }
 
+    pub fn to_number_ponga(&self) -> RunRes<Number> {
+        self.borrow().unwrap().to_number()
+    }
+
     pub fn borrow_mut<'a>(&'a mut self) -> Option<GcRefMut<'a>> {
         unsafe {
             let flags = &mut *self.flags.get();

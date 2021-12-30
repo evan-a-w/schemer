@@ -174,7 +174,7 @@ impl Runtime {
     }
 
     pub fn func_eval(&mut self, pong: &Ponga, args: Vec<Ponga>) -> RunRes<Ponga> {
-        //println!("Evaluating func {:?} with args {:?}", pong, args);
+        println!("Evaluating func {:?} with args: {}", pong, args.iter().format(", "));
         match pong {
             Ponga::HFunc(id) => {
                 if *id >= FUNCS.len() {
@@ -269,15 +269,17 @@ impl Runtime {
                     )))?;
                 let res = self.eval(obj)?;
 
-                self.gc.add_obj_with_id(res, id);
-
-                Ok(Ponga::Ref(id))
+                if res.is_copy() {
+                    self.gc.add_obj_with_id(res.clone(), id);
+                    Ok(res)
+                } else {
+                    self.gc.add_obj_with_id(res, id);
+                    Ok(Ponga::Ref(id))
+                }
             }
             Identifier(s) => {
-                //println!("Matched here");
-                let obj = self.get_identifier_gc_obj(&s)?.borrow().unwrap().clone();
-                //println!("{}: {:?}", s, obj);
-                self.eval(obj)
+                let id = self.get_identifier_id(&s)?;
+                self.eval(Ponga::Ref(id))
             }
             _ => Ok(pong),
         }
@@ -434,7 +436,6 @@ impl Runtime {
 pub fn run_str(s: &str) -> RunRes<Vec<RunRes<Ponga>>> {
     let mut runtime = Runtime::new();
     let parsed = pongascript_parser(s)?;
-    println!("{:?}", parsed);
     if parsed.0.len() != 0 {
         return Err(RuntimeErr::ParseError(format!(
             "Unexpected tokens: {:?}",

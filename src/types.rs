@@ -42,6 +42,20 @@ impl Ponga {
         }
     }
 
+    pub fn is_copy(&self) -> bool {
+        match self {
+            Ponga::Null => true,
+            Ponga::Number(_) => true,
+            Ponga::String(_) => true,
+            Ponga::Char(_) => true,
+            Ponga::Symbol(_) => true,
+            Ponga::Ref(_) => true,
+            Ponga::True => true,
+            Ponga::False => true,
+            _ => false,
+        }
+    }
+
     pub fn is_list(&self) -> bool {
         match self {
             Ponga::List(_) => true,
@@ -130,6 +144,21 @@ impl Ponga {
         match self {
             Ponga::Ref(_) => true,
             _ => false,
+        }
+    }
+
+    pub fn to_bool(&self) -> RunRes<bool> {
+        match self {
+            Ponga::True => Ok(true),
+            Ponga::False => Ok(false),
+            _ => Err(RuntimeErr::TypeError(format!("to bool: {:?} is not a boolean", self))),
+        }
+    }
+
+    pub fn to_number(&self) -> RunRes<Number> {
+        match self {
+            Ponga::Number(n) => Ok(*n),
+            _ => Err(RuntimeErr::TypeError(format!("to number: {:?} is not a number", self))),
         }
     }
 }
@@ -285,5 +314,87 @@ impl Number {
                 Number::Rational(j) => Number::Rational(i / j),
             },
         }
+    }
+
+    pub fn eq(self, rhs: Number) -> bool {
+        match self {
+            Number::Int(i) => match rhs {
+                Number::Int(j) => i == j,
+                Number::Float(j) => i as f64 == j,
+                Number::Rational(j) => Ratio::from(i) == j,
+            },
+            Number::Float(i) => match rhs {
+                Number::Int(j) => i == j as f64,
+                Number::Float(j) => i == j,
+                Number::Rational(j) => i == j.to_f64(),
+            },
+            Number::Rational(i) => match rhs {
+                Number::Int(j) => i == Ratio::from(j),
+                Number::Float(j) => i.to_f64() == j,
+                Number::Rational(j) => i == j,
+            },
+        }
+    }
+
+    pub fn ge(self, rhs: Number) -> bool {
+        match self {
+            Number::Int(i) => match rhs {
+                Number::Int(j) => i >= j,
+                Number::Float(j) => i as f64 >= j,
+                Number::Rational(j) => Ratio::from(i) >= j,
+            },
+            Number::Float(i) => match rhs {
+                Number::Int(j) => i >= j as f64,
+                Number::Float(j) => i >= j,
+                Number::Rational(j) => i >= j.to_f64(),
+            },
+            Number::Rational(i) => match rhs {
+                Number::Int(j) => i >= Ratio::from(j),
+                Number::Float(j) => i.to_f64() >= j,
+                Number::Rational(j) => i >= j,
+            },
+        }
+    }
+
+    pub fn gt(self, rhs: Number) -> bool {
+        match self {
+            Number::Int(i) => match rhs {
+                Number::Int(j) => i > j,
+                Number::Float(j) => i as f64 > j,
+                Number::Rational(j) => Ratio::from(i) > j,
+            },
+            Number::Float(i) => match rhs {
+                Number::Int(j) => i > j as f64,
+                Number::Float(j) => i > j,
+                Number::Rational(j) => i > j.to_f64(),
+            },
+            Number::Rational(i) => match rhs {
+                Number::Int(j) => i > Ratio::from(j),
+                Number::Float(j) => i.to_f64() > j,
+                Number::Rational(j) => i > j,
+            },
+        }
+    }
+
+    pub fn lt(self, rhs: Number) -> bool {
+        !self.ge(rhs)
+    }
+
+    pub fn le(self, rhs: Number) -> bool {
+        !self.gt(rhs)
+    }
+
+    pub fn to_isize(self) -> isize {
+        match self {
+            Number::Int(i) => i,
+            Number::Float(i) => i as isize,
+            Number::Rational(r) => r.to_f64() as isize,
+        }
+    }
+
+    pub fn modulus(self, rhs: Number) -> Number {
+        let a = self.to_isize();
+        let b = rhs.to_isize();
+        Number::Int(a % b)
     }
 }
