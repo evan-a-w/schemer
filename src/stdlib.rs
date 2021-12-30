@@ -276,8 +276,6 @@ pub fn lambda(runtime: &mut Runtime, mut args: Vec<Ponga>) -> RunRes<Ponga> {
             let id = runtime.gc.add_obj(func);
             let state = runtime.condense_locals();
             let stateid = runtime.gc.add_obj(Ponga::Object(state));
-            // DEBUG
-            println!("State id: {}", stateid);
             let cfunc = Ponga::CFunc(new_args, id, stateid);
             Ok(cfunc)
         }

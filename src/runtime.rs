@@ -225,16 +225,11 @@ impl Runtime {
                     .inner()
                     .clone();
 
-                let mut state = self.gc.take_id(*stateid).ok_or(
-                {
-                    // Error as fuck
-                    println!("FATAL: State not found:");
-                    self.gc.print_all_gc_ob();
+                let state = self.gc.take_id(*stateid).ok_or(
                     RuntimeErr::ReferenceError(format!(
                         "State {} not found",
                         stateid
                     ))
-                }
                 )?.extract_map().unwrap();
                 
                 for (k, v) in state.iter() {
@@ -245,9 +240,16 @@ impl Runtime {
                     self.push_local(name, arg);
                 }
 
-                self.gc.add_obj_with_id(Ponga::Object(HashMap::new()), *stateid);
+                self.gc.add_obj_with_id(Ponga::Object(state), *stateid);
                 
                 let res = self.eval(sexpr);
+
+                let mut state = self.gc.take_id(*stateid).ok_or(
+                    RuntimeErr::ReferenceError(format!(
+                        "State {} not found",
+                        stateid
+                    ))
+                )?.extract_map().unwrap();
 
                 for name in names.iter() {
                     self.pop_local(name);

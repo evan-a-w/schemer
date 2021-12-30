@@ -231,6 +231,13 @@ impl Ponga {
             _ => None,
         }
     }
+
+    pub fn extract_map_ref_mut(&mut self) -> Option<&mut HashMap<String, Ponga>> {
+        match self {
+            Ponga::Object(obj) => Some(obj),
+            _ => None,
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]
