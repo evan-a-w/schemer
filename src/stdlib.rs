@@ -35,6 +35,9 @@ pub const FUNCS: &[(&str, fn(&mut Runtime, Vec<Ponga>) -> RunRes<Ponga>)] = &[
     ("let", let_),
     ("map", map_),
     ("foldl", foldl),
+    ("vector-length", vector_len),
+    ("vector-ref", vector_ref),
+    ("vector-append!", vector_append),
 ];
 
 pub fn args_assert_len(args: &Vec<Ponga>, len: usize, name: &str) -> RunRes<()> {
@@ -726,3 +729,72 @@ pub fn foldl(runtime: &mut Runtime, mut args: Vec<Ponga>) -> RunRes<Ponga> {
         _ => Err(RuntimeErr::TypeError(format!("map requires an iterable"))),
     }
 }
+
+pub fn vector_len(runtime: &mut Runtime, mut args: Vec<Ponga>) -> RunRes<Ponga> {
+    args_assert_len(&args, 1, "vector-length")?;
+    let arg = runtime.eval(args.pop().unwrap())?;
+    match arg {
+        Ponga::Ref(id) => {
+            let obj = runtime.get_id_obj_ref(id)?.borrow().unwrap();
+            let r = obj.inner();
+            match r {
+                Ponga::Array(v) => Ok(Ponga::Number(Number::Int(v.len() as isize))),
+                _ => Err(RuntimeErr::TypeError(format!("vector-length requires a vector"))),
+            } 
+        }
+        _ => Err(RuntimeErr::TypeError(format!("vector-length requires a vector"))),
+    }
+}
+
+pub fn vector_ref(runtime: &mut Runtime, mut args: Vec<Ponga>) -> RunRes<Ponga> {
+    args_assert_len(&args, 2, "vector-length")?;
+    let n = runtime.eval(args.pop().unwrap())?;
+    if !n.is_number() {
+        return Err(RuntimeErr::TypeError(format!("vector-ref requires a number")));
+    }
+    let arg = runtime.eval(args.pop().unwrap())?;
+    match arg {
+        Ponga::Ref(id) => {
+            let obj = runtime.get_id_obj_ref(id)?.borrow().unwrap();
+            let r = obj.inner();
+            match r {
+                Ponga::Array(v) => {
+                    let n = n.get_number()?.to_isize();
+                    if n < 0 || n >= v.len() as isize {
+                        return Err(RuntimeErr::TypeError(format!(
+                            "vector-ref index out of bounds"
+                        )));
+                    }
+                    Ok(v[n as usize].clone())
+                }
+                _ => Err(RuntimeErr::TypeError(format!("vector-length requires a vector"))),
+            } 
+        }
+        _ => Err(RuntimeErr::TypeError(format!("vector-length requires a vector"))),
+    }
+}
+
+pub fn vector_append(runtime: &mut Runtime, mut args: Vec<Ponga>) -> RunRes<Ponga> {
+    args_assert_len(&args, 2, "vector-length")?;
+    let n = runtime.eval(args.pop().unwrap())?;
+    let arg = runtime.eval(args.pop().unwrap())?;
+    match arg {
+        Ponga::Ref(id) => {
+            let mut obj = runtime.get_id_obj(id)?.borrow_mut().unwrap();
+            let r = obj.inner();
+            match r {
+                Ponga::Array(v) => {
+                    v.push(n);
+                    Ok(Ponga::Ref(id))
+                }
+                _ => Err(RuntimeErr::TypeError(format!("vector-length requires a vector"))),
+            } 
+        }
+        _ => Err(RuntimeErr::TypeError(format!("vector-length requires a vector"))),
+    }
+}
+
+pub const RUNTIME_FUNCS: &str = "
+(define (even? x) 
+        (= (modulo x 2) 0))
+";

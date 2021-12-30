@@ -178,6 +178,13 @@ impl Ponga {
         }
     }
 
+    pub fn get_number(&self) -> RunRes<Number> {
+        match self {
+            Ponga::Number(n) => Ok(*n),
+            _ => Err(RuntimeErr::TypeError(format!("get number: {:?} is not a number", self))),
+        }
+    }
+
     pub fn get_array(self) -> RunRes<Vec<Ponga>> {
         match self {
             Ponga::Array(array) => Ok(array),

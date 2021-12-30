@@ -37,12 +37,16 @@ impl Runtime {
             global_funcs.insert(val.0.to_string(), Ponga::HFunc(i));
         }
 
-        Self {
+        let mut res = Self {
             globals: Namespace::new(),
             global_funcs,
             locals: PriorityNamespace::new(),
             gc,
-        }
+        };
+
+        res.run_str(RUNTIME_FUNCS).unwrap();
+
+        res
     }
 
     pub fn condense_locals(&self) -> HashMap<String, Ponga> {
@@ -495,11 +499,28 @@ impl Runtime {
             }
         }
     }
+
+    pub fn run_str(&mut self, s: &str) -> RunRes<()> {
+        let parsed = pongascript_parser(s)?;
+        if parsed.0.len() != 0 {
+            return Err(RuntimeErr::ParseError(format!(
+                "Unexpected tokens: {:?}",
+                parsed.0
+            )));
+        }
+        let evald = parsed
+            .1
+            .into_iter()
+            .map(|x| self.eval(x))
+            .collect::<Vec<RunRes<Ponga>>>();
+        Ok(())
+    }
 }
 
 pub fn run_str(s: &str) -> RunRes<Vec<RunRes<Ponga>>> {
     let mut runtime = Runtime::new();
-    let parsed = pongascript_parser(s)?;
+    let parsed = pongascript_parser(s);
+    let parsed = parsed?;
     if parsed.0.len() != 0 {
         return Err(RuntimeErr::ParseError(format!(
             "Unexpected tokens: {:?}",
