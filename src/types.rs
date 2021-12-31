@@ -305,7 +305,7 @@ impl std::fmt::Display for Ponga {
             Ponga::False => write!(f, "#f"),
             Ponga::True => write!(f, "#t"),
             Ponga::Char(c) => write!(f, "#\\{}", c),
-            Ponga::Null => write!(f, "()"),
+            Ponga::Null => write!(f, "'()"),
             Ponga::Symbol(s) => write!(f, "{}", s),
             Ponga::Array(arr) => write!(f, "{:?}", arr),
             Ponga::List(l) => write!(f, "{:?}", l),
