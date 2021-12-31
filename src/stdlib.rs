@@ -856,14 +856,3 @@ pub fn vector_append(runtime: &mut Runtime, mut args: Vec<Ponga>) -> RunRes<Pong
         _ => Err(RuntimeErr::TypeError(format!("vector-append! requires a vector"))),
     }
 }
-
-pub const RUNTIME_FUNCS: &str = "
-(define (even? x) 
-        (= (modulo x 2) 0))
-
-(define (vector->list vec)
-        (foldr cons '() vec))
-
-(define (list->vector list)
-        (foldl vector-append! #() list))
-";

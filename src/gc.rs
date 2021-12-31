@@ -7,11 +7,14 @@ use std::collections::HashMap;
 use std::collections::HashSet;
 use std::ptr::{self, NonNull};
 use std::rc::Rc;
+use std::time::{Duration, Instant};
 
 pub struct Gc {
     pub ptrs: HashMap<Id, GcObj>,
     pub roots: HashSet<Id>,
     pub max_id: usize,
+    pub last_gc: Instant,
+    pub gc_duration: Duration,
 }
 
 impl Gc {
@@ -20,6 +23,16 @@ impl Gc {
             ptrs: HashMap::new(),
             roots: HashSet::new(),
             max_id: 0,
+            last_gc: Instant::now(),
+            gc_duration: Duration::from_secs(5),
+        }
+    }
+
+    pub fn try_collect_garbage(&mut self) {
+        let now = Instant::now();
+        if now.duration_since(self.last_gc) > self.gc_duration {
+            self.last_gc = now;
+            self.collect_garbage();
         }
     }
 
@@ -44,6 +57,7 @@ impl Gc {
     }
 
     pub fn take_id(&mut self, id: Id) -> Option<Ponga> {
+        self.try_collect_garbage();
         let obj = self.ptrs.get_mut(&id)?;
         let res = unsafe { *Box::from_raw(obj.data.as_ptr()) };
         self.ptrs.remove(&id);
@@ -57,6 +71,7 @@ impl Gc {
     }
 
     pub fn add_obj(&mut self, data: Ponga) -> Id {
+        self.try_collect_garbage();
         let obj = GcObj::new(self, data);
         let id = obj.id;
         self.ptrs.insert(obj.id, obj);
@@ -64,6 +79,7 @@ impl Gc {
     }
 
     pub fn add_obj_with_id(&mut self, data: Ponga, id: Id) {
+        self.try_collect_garbage();
         let obj = GcObj {
             data: NonNull::new(Box::into_raw(Box::new(data))).unwrap(),
             flags: UnsafeCell::new(Flags {

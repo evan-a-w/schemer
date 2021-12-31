@@ -44,7 +44,8 @@ impl Runtime {
             gc,
         };
 
-        res.run_str(RUNTIME_FUNCS).unwrap();
+        let stdlib_scm = include_str!("stdlib.scm");
+        res.run_str(stdlib_scm).unwrap();
 
         res
     }
@@ -514,6 +515,13 @@ impl Runtime {
             .map(|x| self.eval(x))
             .collect::<Vec<RunRes<Ponga>>>();
         Ok(())
+    }
+
+    pub fn run_file(&mut self, filename: &str) -> RunRes<()> {
+        let mut file = File::open(filename)?;
+        let mut contents = String::new();
+        file.read_to_string(&mut contents)?;
+        self.run_str(&contents)
     }
 }
 
