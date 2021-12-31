@@ -315,6 +315,13 @@ impl Runtime {
                 }
                 Ok(Ponga::Ref(self.gc.add_obj(Ponga::List(res))))
             }
+            Object(obj) => {
+                let mut res = HashMap::new();
+                for (k, v) in obj {
+                    res.insert(k, self.eval(v)?);
+                }
+                Ok(Ponga::Ref(self.gc.add_obj(Ponga::Object(res))))
+            }
             Ref(id) => {
                 let obj = self
                     .gc
@@ -488,15 +495,15 @@ impl Runtime {
                 format!(
                     "'({})",
                     o.iter()
-                        .map(|(k, v)| format!("({}, {})", k.to_string(), self.ponga_to_string(v)))
-                        .format(", ")
+                        .map(|(k, v)| format!("'({} {})", k.to_string(), self.ponga_to_string(v)))
+                        .format(" ")
                 )
             }
             Ponga::Array(arr) => {
-                format!("#({})", arr.iter().map(|p| self.ponga_to_string(p)).format(", "))
+                format!("#({})", arr.iter().map(|p| self.ponga_to_string(p)).format(" "))
             }
             Ponga::List(l) => {
-                format!("'({})", l.iter().map(|p| self.ponga_to_string(p)).format(", "))
+                format!("'({})", l.iter().map(|p| self.ponga_to_string(p)).format(" "))
             }
         }
     }

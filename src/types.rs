@@ -476,6 +476,35 @@ impl Number {
         }
     }
 
+    pub fn ceiling(self) -> Number {
+        match self {
+            Number::Int(i) => Number::Int(i),
+            Number::Float(i) => Number::Int(i.ceil() as isize),
+            Number::Rational(r) => Number::Int(r.to_f64().ceil() as isize),
+        }
+    }
+
+    pub fn floor(self) -> Number {
+        match self {
+            Number::Int(i) => Number::Int(i),
+            Number::Float(i) => Number::Int(i.floor() as isize),
+            Number::Rational(r) => Number::Int(r.to_f64().floor() as isize),
+        }
+    }
+
+    pub fn sqrt(self) -> Number {
+        match self {
+            Number::Int(i) => Number::Int((i as f64).sqrt().floor() as isize),
+            Number::Float(i) => Number::Float(i.sqrt()),
+            Number::Rational(r) => Number::Rational(
+                Ratio::new(
+                    ((r.numerator as f64).sqrt() as isize).into(),
+                    ((r.denominator as f64).sqrt() as isize).into(),
+                ),
+            ),
+        }
+    }
+
     pub fn modulus(self, rhs: Number) -> Number {
         let a = self.to_isize();
         let b = rhs.to_isize();

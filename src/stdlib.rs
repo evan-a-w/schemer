@@ -2,6 +2,7 @@ use crate::runtime::*;
 use crate::take_obj::*;
 use crate::types::*;
 use std::collections::LinkedList;
+use std::collections::HashMap;
 
 pub const FUNCS: &[(&str, fn(&mut Runtime, Vec<Ponga>) -> RunRes<Ponga>)] = &[
     ("cons", cons),
@@ -39,6 +40,13 @@ pub const FUNCS: &[(&str, fn(&mut Runtime, Vec<Ponga>) -> RunRes<Ponga>)] = &[
     ("vector-length", vector_len),
     ("vector-ref", vector_ref),
     ("vector-append!", vector_append),
+    ("list->map", list_to_map),
+    ("map-contains?", map_contains),
+    ("map-ref", map_ref),
+    ("map-set!", map_set),
+    ("floor", floor),
+    ("ceiling", ceiling),
+    ("sqrt", sqrt),
 ];
 
 pub fn args_assert_len(args: &Vec<Ponga>, len: usize, name: &str) -> RunRes<()> {
@@ -854,5 +862,154 @@ pub fn vector_append(runtime: &mut Runtime, mut args: Vec<Ponga>) -> RunRes<Pong
             } 
         }
         _ => Err(RuntimeErr::TypeError(format!("vector-append! requires a vector"))),
+    }
+}
+
+pub fn floor(runtime: &mut Runtime, mut args: Vec<Ponga>) -> RunRes<Ponga> {
+    args_assert_len(&mut args, 1, "floor")?;
+    let mut args = eval_args(runtime, args)?;
+    let fst = args.pop().unwrap();
+    match fst {
+        Ponga::Number(n) => {
+            Ok(Ponga::Number(n.floor()))
+        }
+        _ => Err(RuntimeErr::TypeError(format!("floor requires a number"))),
+    }
+}
+
+pub fn ceiling(runtime: &mut Runtime, mut args: Vec<Ponga>) -> RunRes<Ponga> {
+    args_assert_len(&mut args, 1, "ceiling")?;
+    let mut args = eval_args(runtime, args)?;
+    let fst = args.pop().unwrap();
+    match fst {
+        Ponga::Number(n) => {
+            Ok(Ponga::Number(n.floor()))
+        }
+        _ => Err(RuntimeErr::TypeError(format!("ceiling requires a number"))),
+    }
+}
+
+pub fn sqrt(runtime: &mut Runtime, mut args: Vec<Ponga>) -> RunRes<Ponga> {
+    args_assert_len(&mut args, 1, "sqrt")?;
+    let mut args = eval_args(runtime, args)?;
+    let fst = args.pop().unwrap();
+    match fst {
+        Ponga::Number(n) => {
+            Ok(Ponga::Number(n.sqrt()))
+        }
+        _ => Err(RuntimeErr::TypeError(format!("sqrt requires a number"))),
+    }
+}
+
+pub fn map_ref(runtime: &mut Runtime, mut args: Vec<Ponga>) -> RunRes<Ponga> {
+    args_assert_len(&args, 2, "map-ref")?;
+    let n = runtime.eval(args.pop().unwrap())?;
+    let arg = runtime.eval(args.pop().unwrap())?;
+    match arg {
+        Ponga::Ref(id) => {
+            let obj = runtime.get_id_obj_ref(id)?.borrow().unwrap();
+            let r = obj.inner();
+            match r {
+                Ponga::Object(o) => {
+                    let s = runtime.ponga_to_string(&n);
+                    let v = o.get(s.as_str()).unwrap_or(&Ponga::Null);
+                    Ok(v.clone())
+                }
+                _ => Err(RuntimeErr::TypeError(format!("map-ref requires a map"))),
+            } 
+        }
+        _ => Err(RuntimeErr::TypeError(format!("map-ref requires a map"))),
+    }
+}
+
+pub fn map_set(runtime: &mut Runtime, mut args: Vec<Ponga>) -> RunRes<Ponga> {
+    args_assert_len(&args, 3, "map-set!")?;
+    let val = runtime.eval(args.pop().unwrap())?;
+    let key = runtime.eval(args.pop().unwrap())?;
+    let arg = runtime.eval(args.pop().unwrap())?;
+    match arg {
+        Ponga::Ref(id) => {
+            let s = runtime.ponga_to_string(&key);
+            let mut obj = runtime.get_id_obj(id)?.borrow_mut().unwrap();
+            let r = obj.inner();
+            match r {
+                Ponga::Object(o) => {
+                    o.insert(s, val);
+                    Ok(Ponga::Ref(id))
+                }
+                _ => Err(RuntimeErr::TypeError(format!("map-set! requires a map"))),
+            } 
+        }
+        _ => Err(RuntimeErr::TypeError(format!("map-set! requires a map"))),
+    }
+}
+
+pub fn map_contains(runtime: &mut Runtime, mut args: Vec<Ponga>) -> RunRes<Ponga> {
+    args_assert_len(&args, 2, "map-contains?")?;
+    let n = runtime.eval(args.pop().unwrap())?;
+    let arg = runtime.eval(args.pop().unwrap())?;
+    match arg {
+        Ponga::Ref(id) => {
+            let obj = runtime.get_id_obj_ref(id)?.borrow().unwrap();
+            let r = obj.inner();
+            match r {
+                Ponga::Object(o) => {
+                    let s = runtime.ponga_to_string(&n);
+                    let v = o.get(s.as_str()).is_some();
+                    Ok(bool_to_ponga(v))
+                }
+                _ => Err(RuntimeErr::TypeError(format!("map-contains? requires a map"))),
+            } 
+        }
+        _ => Err(RuntimeErr::TypeError(format!("map-contains? requires a map"))),
+    }
+}
+
+fn insert_list_pair_into_map(runtime: &Runtime, map: &mut HashMap<String, Ponga>,
+                             pair: &Ponga) -> RunRes<()> {
+    match pair {
+        Ponga::Ref(id) => {
+            let obj = runtime.get_id_obj_ref(*id)?.borrow().unwrap();
+            let r = obj.inner();
+            if let Ponga::List(list) = r {
+                if list.len() == 2 {
+                    let mut iter = list.iter();
+                    let key = iter.next().unwrap();
+                    let val = iter.next().unwrap();
+                    let s = runtime.ponga_to_string(key);
+                    map.insert(s, val.clone());
+                    return Ok(());
+                }
+            }
+            Err(RuntimeErr::TypeError(format!("list->map requires list of list pairs")))
+        }
+        _ => {
+            Err(RuntimeErr::TypeError(format!("list->map requires list of list pairs")))
+        }
+    }
+
+}
+
+pub fn list_to_map(runtime: &mut Runtime, mut args: Vec<Ponga>) -> RunRes<Ponga> {
+    args_assert_len(&mut args, 1, "list->map")?;
+    let mut args = eval_args(runtime, args)?;
+    let list = args.pop().unwrap();
+    
+    match list {
+        Ponga::Ref(id) => {
+            let obj = runtime.get_id_obj_ref(id)?.borrow().unwrap();
+            let r = obj.inner();
+            match r {
+                Ponga::List(list) => {
+                    let mut map = HashMap::new();
+                    for item in list {
+                        insert_list_pair_into_map(runtime, &mut map, item)?;
+                    }
+                    Ok(Ponga::Object(map))
+                }
+                _ => Err(RuntimeErr::TypeError(format!("list->map requires a list"))),
+            }
+        }
+        _ => Err(RuntimeErr::TypeError(format!("list->map requires a list"))),
     }
 }
