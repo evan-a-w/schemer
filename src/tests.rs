@@ -359,8 +359,8 @@ pub fn test_basic_run() {
     use Ponga::*;
     use RuntimeErr::*;
 
-    let parsed = pongascript_parser(
-        "(foldl cons '() '(1 2 3 4 5))
+    let parsed = pongascript_parser("
+    (foldl cons '() '(1 2 3 4 5))
      (define (foldl func accu alist)
        (if (null? alist)
          accu
@@ -369,8 +369,7 @@ pub fn test_basic_run() {
      (define i (foldl cons '() '(1 2 3 4 5)))
      (display i)
      (equal? i '(5 4 3 2 1))
-     ",
-    )
+    ")
     .unwrap();
     let mut runtime = Runtime::new();
     let evald = parsed
@@ -396,7 +395,7 @@ pub fn test_closures() {
              v)))))
 (count)
 (count)
-")
+    ")
     .unwrap();
     let mut runtime = Runtime::new();
     let evald = parsed
