@@ -545,7 +545,14 @@ pub fn run_str(s: &str) -> RunRes<Vec<RunRes<Ponga>>> {
     let evald = parsed
         .1
         .into_iter()
-        .map(|x| runtime.eval(x))
+        .map(|x| {
+            let res = runtime.eval(x);
+            match &res {
+                Ok(_) => (),
+                Err(e) => println!("{}", e),
+            }
+            res
+        })
         .collect::<Vec<RunRes<Ponga>>>();
     let last = &evald[evald.len() - 1];
     match last {
