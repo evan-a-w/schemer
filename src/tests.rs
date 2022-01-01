@@ -370,7 +370,7 @@ pub fn test_super_basic_run() {
         .map(|x| runtime.eval(x))
         .collect::<Vec<RunRes<Ponga>>>();
     println!("{:?}", evald);
-    assert!(evald[1] == Ok(Ponga::True));
+    assert!(evald[2] == Ok(Ponga::True));
 
     runtime.collect_garbage();
 }

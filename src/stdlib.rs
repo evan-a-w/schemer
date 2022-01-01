@@ -349,8 +349,9 @@ pub fn teq(runtime: &mut Runtime, mut args: Vec<Ponga>) -> RunRes<Ponga> {
     // println!("EQUAL {:?}", args);
     let snd = args.pop().unwrap();
     let fst = args.pop().unwrap();
-    println!("equal? {} {}", runtime.ponga_to_string(&fst), runtime.ponga_to_string(&snd));
-    Ok(bool_to_ponga(fst.equals(&snd, runtime)?))
+    Ok(bool_to_ponga(
+        runtime.ponga_to_string(&fst) == runtime.ponga_to_string(&snd)
+    ))
 }
 
 pub fn peq(runtime: &mut Runtime, mut args: Vec<Ponga>) -> RunRes<Ponga> {

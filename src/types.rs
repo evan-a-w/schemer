@@ -255,9 +255,12 @@ impl Ponga {
             _ => None,
         }
     }
+    
+    pub fn equals_alt(self, snd: Self, runtime: &Runtime) -> RunRes<bool> {
+        Ok(false)
+    }
 
     pub fn equals(&self, snd: &Self, runtime: &Runtime) -> RunRes<bool> {
-        println!("{:?} vs {:?}", self, snd);
         match self {
             Ponga::Identifier(s1) => {
                 let fre1 = runtime.get_identifier_obj_ref(&s1)?;
