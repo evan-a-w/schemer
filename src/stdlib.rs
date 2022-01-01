@@ -116,10 +116,10 @@ pub fn cons(runtime: &mut Runtime, mut args: Vec<Ponga>) -> RunRes<Ponga> {
 pub fn null(runtime: &mut Runtime, mut args: Vec<Ponga>) -> RunRes<Ponga> {
     args_assert_len(&mut args, 1, "null?")?;
     let mut args = transform_args(runtime, args)?;
-    println!("NULL ARGS: {:?}", args);
     let arg = args.pop().unwrap();
+    println!("NULL ARG: {} ({:?})", runtime.ponga_to_string(&arg), arg);
     match arg {
-        Ponga::List(list) => Ok(runtime.gc.ponga_into_gc_ref(bool_to_ponga(list.is_empty()))),
+        Ponga::List(list) => Ok(bool_to_ponga(list.is_empty())),
         Ponga::Null => Ok(Ponga::True),
         Ponga::Ref(id) => {
             let mut obj = runtime.get_id_obj(id)?.borrow_mut().unwrap();
@@ -128,15 +128,31 @@ pub fn null(runtime: &mut Runtime, mut args: Vec<Ponga>) -> RunRes<Ponga> {
                 Ponga::List(list) => {
                     let res = bool_to_ponga(list.is_empty());
                     drop(obj);
-                    Ok(runtime.gc.ponga_into_gc_ref(res))
+                    Ok(res)
                 }
                 Ponga::Null => Ok(Ponga::True),
                 _ => Err(RuntimeErr::TypeError(format!(
-                    "null? requires a list or null"
+                    "null? requires a list or null (not {:?})", r
                 ))),
             }
         }
-        _ => Err(RuntimeErr::TypeError(format!("null? requires a list"))),
+        Ponga::Identifier(id) => {
+            let obj = runtime.get_identifier_obj_ref(&id)?;
+            match obj {
+                Ponga::List(list) => {
+                    let res = bool_to_ponga(list.is_empty());
+                    drop(obj);
+                    Ok(res)
+                }
+                Ponga::Null => Ok(Ponga::True),
+                _ => Err(RuntimeErr::TypeError(format!(
+                    "null? requires a list or null (not {:?})", obj
+                ))),
+            }
+        }
+        _ => Err(RuntimeErr::TypeError(
+            format!("null? requires a list (not {:?})", arg)
+        )),
     }
 }
 
@@ -330,58 +346,11 @@ pub fn eq(runtime: &mut Runtime, mut args: Vec<Ponga>) -> RunRes<Ponga> {
 pub fn teq(runtime: &mut Runtime, mut args: Vec<Ponga>) -> RunRes<Ponga> {
     args_assert_len(&mut args, 2, "eq?")?;
     let mut args = transform_args(runtime, args)?;
+    // println!("EQUAL {:?}", args);
     let snd = args.pop().unwrap();
     let fst = args.pop().unwrap();
-
-    match fst {
-        Ponga::Identifier(s1) => {
-            let fre1 = runtime.get_identifier_obj_ref(&s1)?;
-            match snd {
-                Ponga::Identifier(s2) => {
-                    let fre2 = runtime.get_identifier_obj_ref(&s2)?;
-                    Ok(bool_to_ponga(fre1 == fre2))
-                }
-                Ponga::Ref(id) => {
-                    let obj = runtime.get_id_obj_ref(id)?;
-                    let borrowed = obj.borrow().unwrap();
-                    let fre2 = borrowed.inner();
-                    Ok(bool_to_ponga(fre1 == fre2))
-                }
-                ponga => Ok(bool_to_ponga(fre1 == &ponga)),
-            }
-        }
-        Ponga::Ref(id) => {
-            let obj1 = runtime.get_id_obj_ref(id)?;
-            let borrowed1 = obj1.borrow().unwrap();
-            let fre1 = borrowed1.inner();
-            match snd {
-                Ponga::Identifier(s2) => {
-                    let fre2 = runtime.get_identifier_obj_ref(&s2)?;
-                    Ok(bool_to_ponga(fre1 == fre2))
-                }
-                Ponga::Ref(id) => {
-                    let obj = runtime.get_id_obj_ref(id)?;
-                    let borrowed = obj.borrow().unwrap();
-                    let fre2 = borrowed.inner();
-                    Ok(bool_to_ponga(fre1 == fre2))
-                }
-                ponga => Ok(bool_to_ponga(fre1 == &ponga)),
-            }
-        }
-        fre1 => match snd {
-            Ponga::Identifier(s2) => {
-                let fre2 = runtime.get_identifier_obj_ref(&s2)?;
-                Ok(bool_to_ponga(&fre1 == fre2))
-            }
-            Ponga::Ref(id) => {
-                let obj = runtime.get_id_obj_ref(id)?;
-                let borrowed = obj.borrow().unwrap();
-                let fre2 = borrowed.inner();
-                Ok(bool_to_ponga(&fre1 == fre2))
-            }
-            ponga => Ok(bool_to_ponga(fre1 == ponga)),
-        },
-    }
+    println!("equal? {} {}", runtime.ponga_to_string(&fst), runtime.ponga_to_string(&snd));
+    Ok(bool_to_ponga(fst.equals(&snd, runtime)?))
 }
 
 pub fn peq(runtime: &mut Runtime, mut args: Vec<Ponga>) -> RunRes<Ponga> {
@@ -555,15 +524,7 @@ pub fn let_(runtime: &mut Runtime, mut args: Vec<Ponga>) -> RunRes<Ponga> {
 
 pub fn begin(runtime: &mut Runtime, mut args: Vec<Ponga>) -> RunRes<Ponga> {
     args_assert_gt(&args, 0, "begin")?;
-    let mut args = transform_args(runtime, args)?;
-    let len = args.len();
-    for (i, arg) in args.into_iter().enumerate() {
-        if i == len - 1 {
-            return runtime.eval(arg);
-        }
-        runtime.eval(arg)?;
-    }
-    Ok(Ponga::Null)
+    Ok(args.pop().unwrap())
 }
 
 pub fn disp(runtime: &mut Runtime, mut args: Vec<Ponga>) -> RunRes<Ponga> {
@@ -577,7 +538,7 @@ pub fn disp(runtime: &mut Runtime, mut args: Vec<Ponga>) -> RunRes<Ponga> {
 pub fn foldl(runtime: &mut Runtime, mut args: Vec<Ponga>) -> RunRes<Ponga> {
     args_assert_len(&mut args, 3, "foldl")?;
     let mut args = transform_args(runtime, args)?;
-    println!("ARGS: {:?}", args);
+    // println!("ARGS: {:?}", args);
     let iterable = args.pop().unwrap();
     let mut acc = args.pop().unwrap();
     let func = args.pop().unwrap();
@@ -591,7 +552,7 @@ pub fn foldl(runtime: &mut Runtime, mut args: Vec<Ponga>) -> RunRes<Ponga> {
             }
         }
         if fail {
-            println!("FAIL: {:?}", func);
+            // println!("FAIL: {:?}", func);
             return Err(RuntimeErr::TypeError(format!(
                 "first argument to foldl must be a function"
             )));
@@ -753,7 +714,7 @@ pub fn vector_ref(runtime: &mut Runtime, mut args: Vec<Ponga>) -> RunRes<Ponga> 
 pub fn vector_append(runtime: &mut Runtime, mut args: Vec<Ponga>) -> RunRes<Ponga> {
     args_assert_len(&args, 2, "vector-append!")?;
     let mut args = transform_args(runtime, args)?;
-    println!("APPEND: {:?}", args);
+    // println!("APPEND: {:?}", args);
     let n = args.pop().unwrap();
     let arg = args.pop().unwrap();
     match arg {

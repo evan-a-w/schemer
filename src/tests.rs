@@ -359,7 +359,8 @@ pub fn test_parser_sexpr() {
 pub fn test_super_basic_run() {
     let parsed = pongascript_parser("
     (define i (foldl cons '() '(1 2 3 4 5)))
-    (equal? i '(5 4 3 2 1))
+    (display i)
+    (equal? i '('('('('('() 1) 2) 3) 4) 5))
     ")
     .unwrap();
     let mut runtime = Runtime::new();
@@ -376,9 +377,6 @@ pub fn test_super_basic_run() {
 
 #[test]
 pub fn test_basic_run() {
-    use Ponga::*;
-    use RuntimeErr::*;
-
     let parsed = pongascript_parser("
     (foldl cons '() '(1 2 3 4 5))
      (define (foldl func accu alist)

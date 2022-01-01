@@ -255,6 +255,65 @@ impl Ponga {
             _ => None,
         }
     }
+
+    pub fn equals(&self, snd: &Self, runtime: &Runtime) -> RunRes<bool> {
+        println!("{:?} vs {:?}", self, snd);
+        match self {
+            Ponga::Identifier(s1) => {
+                let fre1 = runtime.get_identifier_obj_ref(&s1)?;
+                match snd {
+                    Ponga::Identifier(s2) => {
+                        let fre2 = runtime.get_identifier_obj_ref(&s2)?;
+                        Ok(fre1 == fre2 || fre1.equals(fre2, runtime)?)
+                    }
+                    Ponga::Ref(id) => {
+                        let obj = runtime.get_id_obj_ref(*id)?;
+                        let borrowed = obj.borrow().unwrap();
+                        let fre2 = borrowed.inner();
+                        Ok(fre1 == fre2 || fre1.equals(fre2, runtime)?)
+                    }
+                    ponga => {
+                        Ok(fre1 == ponga || fre1.equals(&ponga, runtime)?)
+                    }
+                }
+            }
+            Ponga::Ref(id) => {
+                let obj1 = runtime.get_id_obj_ref(*id)?;
+                let borrowed1 = obj1.borrow().unwrap();
+                let fre1 = borrowed1.inner();
+                match snd {
+                    Ponga::Identifier(s2) => {
+                        let fre2 = runtime.get_identifier_obj_ref(&s2)?;
+                        Ok(fre1 == fre2 || fre1.equals(fre2, runtime)?)
+                    }
+                    Ponga::Ref(id) => {
+                        let obj = runtime.get_id_obj_ref(*id)?;
+                        let borrowed = obj.borrow().unwrap();
+                        let fre2 = borrowed.inner();
+                        Ok(fre1 == fre2 || fre1.equals(fre2, runtime)?)
+                    }
+                    ponga => {
+                        Ok(fre1 == ponga || fre1.equals(&ponga, runtime)?)
+                    }
+                }
+            }
+            fre1 => match snd {
+                Ponga::Identifier(s2) => {
+                    let fre2 = runtime.get_identifier_obj_ref(&s2)?;
+                    Ok(fre1 == fre2 || fre1.equals(fre2, runtime)?)
+                }
+                Ponga::Ref(id) => {
+                    let obj = runtime.get_id_obj_ref(*id)?;
+                    let borrowed = obj.borrow().unwrap();
+                    let fre2 = borrowed.inner();
+                    Ok(fre1 == fre2 || fre1.equals(fre2, runtime)?)
+                }
+                ponga => {
+                    Ok(fre1 == ponga)
+                }
+            },
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]

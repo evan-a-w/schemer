@@ -211,7 +211,11 @@ impl Runtime {
                 if ref_obj.is_copy() {
                     Ok(ref_obj.clone())
                 } else {
-                    Ok(Ponga::Identifier(s))
+                    let cloned = ref_obj.clone();
+                    drop(ref_obj);
+                    let r = self.gc.ponga_into_gc_ref(cloned);
+                    self.set_identifier(&s, r.clone())?;
+                    Ok(r)
                 }
             }
             _ => {
@@ -233,13 +237,13 @@ impl Runtime {
         let mut data_stack = vec![];
         let mut ins_stack = vec![Instruction::Eval(pong)];
         loop {
-            println!("Data stack: {:?}", data_stack);
-            println!("Ins stack: {:?}", ins_stack);
-            println!("State: {}", self.state_to_string());
-            println!("Doing: {:?}", ins_stack[ins_stack.len() - 1]);
-            print!("Gc obj:");
-            self.gc.print_all_gc_ob();
-            println!("\n--------------\n");
+            // println!("Data stack: {:?}", data_stack);
+            // println!("Ins stack: {:?}", ins_stack);
+            // println!("State: {}", self.state_to_string());
+            // println!("Doing: {:?}", ins_stack[ins_stack.len() - 1]);
+            // print!("Gc obj:");
+            // self.gc.print_all_gc_ob();
+            // println!("\n--------------\n");
             match ins_stack.pop().unwrap() {
                 Instruction::Define(s) => {
                     self.bind_global(s, pop_or(&mut data_stack)?);
@@ -256,7 +260,7 @@ impl Runtime {
                     for _ in 0..n {
                         res.push(pop_or(&mut data_stack)?);
                     }
-                    println!("Collecting array {:?}", res);
+                    // println!("Collecting array {:?}", res);
                     data_stack.push(self.gc.ponga_into_gc_ref(Ponga::Array(res)));
                 }
                 Instruction::CollectList(n) => {
@@ -264,7 +268,7 @@ impl Runtime {
                     for _ in 0..n {
                         res.push_back(pop_or(&mut data_stack)?);
                     }
-                    println!("Collecting list {:?}", res);
+                    // println!("Collecting list {:?}", res);
                     data_stack.push(self.gc.ponga_into_gc_ref(Ponga::List(res)));
                 }
                 Instruction::CollectObject(strings) => {

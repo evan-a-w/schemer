@@ -34,6 +34,18 @@ fn run_file_main() -> RunRes<()> {
 
 fn main() -> RunRes<()> {
     let parsed = pongascript_parser("
+    (display (foldl cons '() '(1 2 3 4 5)))
+    ")
+    .unwrap();
+    let mut runtime = Runtime::new();
+    let evald = parsed
+        .1
+        .into_iter()
+        .map(|x| runtime.eval(x))
+        .collect::<Vec<RunRes<Ponga>>>();
+    println!("{:?}", evald);
+    return Ok(());
+    let parsed = pongascript_parser("
     (foldl cons '() '(1 2 3 4 5))
      (define (foldl func accu alist)
        (if (null? alist)
@@ -45,12 +57,4 @@ fn main() -> RunRes<()> {
      (equal? i '(5 4 3 2 1))
     ")
     .unwrap();
-    let mut runtime = Runtime::new();
-    let evald = parsed
-        .1
-        .into_iter()
-        .map(|x| runtime.eval(x))
-        .collect::<Vec<RunRes<Ponga>>>();
-    println!("{:?}", evald);
-    Ok(())
 }
