@@ -3,8 +3,8 @@ use crate::gc_obj::*;
 use crate::parser::*;
 use crate::stdlib::*;
 use crate::types::*;
+use crate::instructions::*;
 use itertools::Itertools;
-use std::cell::UnsafeCell;
 use std::collections::HashMap;
 use std::collections::LinkedList;
 use std::fs::File;
@@ -44,8 +44,8 @@ impl Runtime {
             gc,
         };
 
-        let stdlib_scm = include_str!("stdlib.scm");
-        res.run_str(stdlib_scm).unwrap();
+        // let stdlib_scm = include_str!("stdlib.scm");
+        // res.run_str(stdlib_scm).unwrap();
 
         res
     }
@@ -209,149 +209,347 @@ impl Runtime {
             .push(pong);
     }
 
-    pub fn func_eval(&mut self, pong: &Ponga, args: Vec<Ponga>) -> RunRes<Ponga> {
+    pub fn id_or_ref_peval(&self, pong: Ponga) -> RunRes<Ponga> {
         match pong {
-            Ponga::HFunc(id) => {
-                if *id >= FUNCS.len() {
-                    return Err(RuntimeErr::ReferenceError(format!(
-                        "Function {} not found",
-                        id
-                    )));
-                }
-                FUNCS[*id].1(self, args)
-            }
-            Ponga::CFunc(names, id, stateid) => {
-                args_assert_len(&args, names.len(), "func")?;
-                let args = eval_args(self, args)?;
-                let sexpr = self
-                    .get_id_obj(*id)?
-                    .borrow()
-                    .unwrap()
-                    .inner()
-                    .clone();
-
-                let state = self.gc.take_id(*stateid).ok_or(
-                    RuntimeErr::ReferenceError(format!(
-                        "State {} not found",
-                        stateid
-                    ))
-                )?.extract_map().unwrap();
-                
-                for (k, v) in state.iter() {
-                    self.push_local(k, v.clone());
-                }
-
-                for (name, arg) in names.iter().zip(args.into_iter()) {
-                    self.push_local(name, arg);
-                }
-
-                self.gc.add_obj_with_id(Ponga::Object(state), *stateid);
-                
-                let res = self.eval(sexpr);
-
-                let mut state = self.gc.take_id(*stateid).ok_or(
-                    RuntimeErr::ReferenceError(format!(
-                        "State {} not found",
-                        stateid
-                    ))
-                )?.extract_map().unwrap();
-
-                for name in names.iter() {
-                    self.pop_local(name);
-                }
-
-                let mut vals = Vec::new();
-                for name in state.keys() {
-                    vals.push((name.clone(), self.pop_local(name)));
-                }
-
-                for (name, val) in vals {
-                    state.insert(name, val);
-                }
-
-                let _ = self.gc.take_id(*stateid);
-                self.gc.add_obj_with_id(Ponga::Object(state), *stateid);
-
-                Ok(res?)
-            }
-            Ponga::Identifier(identifier) => {
-                let func = self.get_identifier_obj_ref(identifier)?.clone();
-                self.func_eval(&func, args)
-            }
             Ponga::Ref(id) => {
-                let mut obj = self.get_id_obj(*id)?.clone();
-                let res = self.func_eval(obj.borrow_mut().unwrap().inner(), args)?;
-                Ok(res)
+                let ref_obj = self.get_id_obj_ref(id)?;
+                let inner = ref_obj.borrow().unwrap();
+                if inner.is_copy() {
+                    Ok(inner.inner().clone())
+                } else {
+                    Ok(Ponga::Ref(id))
+                }
             }
-            _ => Err(RuntimeErr::TypeError(
-                "Using non-callable value as function".to_string(),
-            )),
+            Ponga::Identifier(s) => {
+                let ref_obj = self.get_identifier_obj_ref(&s)?;
+                if ref_obj.is_copy() {
+                    Ok(ref_obj.clone())
+                } else {
+                    Ok(Ponga::Identifier(s))
+                }
+            }
+            _ => Ok(pong),
         }
+    }
+
+    pub fn state_to_string(&self) -> String {
+        format!("Locals: {:?}\nGlobals: {:?}", self.locals, self.globals)
     }
 
     pub fn eval(&mut self, pong: Ponga) -> RunRes<Ponga> {
         use Ponga::*;
-        match pong {
-            Sexpr(v) => {
-                if v.len() == 0 {
-                    return Ok(Ponga::Null);
+        let mut data_stack = vec![pong];
+        let mut ins_stack = vec![Instruction::Eval];
+        loop {
+            println!("Data stack: {:?}", data_stack);
+            println!("Ins stack: {:?}", ins_stack);
+            println!("State: {}", self.state_to_string());
+            println!("\n--------------\n");
+            match ins_stack.pop().unwrap() {
+                Instruction::Define(s) => {
+                    self.bind_global(s, pop_or(&mut data_stack)?);
+                    data_stack.push(Ponga::Null);
                 }
-                let mut iter = v.into_iter();
-                let func = iter.next().unwrap();
-                let args = iter.collect();
-                self.func_eval(&func, args)
-            }
-            Array(arr) => {
-                let mut res = Vec::new();
-                for pong in arr {
-                    res.push(self.eval(pong)?);
+                Instruction::Push(s) => self.push_local(&s, pop_or(&mut data_stack)?),
+                Instruction::Pop(s) => { self.pop_local(&s); },
+                Instruction::Set(s) => { 
+                    self.set_identifier(&s, pop_or(&mut data_stack)?)?;
+                    data_stack.push(Ponga::Null);
                 }
-                Ok(Ponga::Ref(self.gc.add_obj(Ponga::Array(res))))
-            }
-            List(l) => {
-                let mut res = LinkedList::new();
-                for pong in l {
-                    res.push_back(self.eval(pong)?);
+                Instruction::CollectArray(n) => {
+                    let mut res = Vec::new();
+                    for _ in 0..n {
+                        res.push(pop_or(&mut data_stack)?);
+                    }
+                    data_stack.push(self.gc.ponga_into_gc_ref(Ponga::Array(res)));
                 }
-                Ok(Ponga::Ref(self.gc.add_obj(Ponga::List(res))))
-            }
-            Object(obj) => {
-                let mut res = HashMap::new();
-                for (k, v) in obj {
-                    res.insert(k, self.eval(v)?);
+                Instruction::CollectList(n) => {
+                    let mut res = LinkedList::new();
+                    for _ in 0..n {
+                        res.push_back(pop_or(&mut data_stack)?);
+                    }
+                    data_stack.push(self.gc.ponga_into_gc_ref(Ponga::List(res)));
                 }
-                Ok(Ponga::Ref(self.gc.add_obj(Ponga::Object(res))))
-            }
-            Ref(id) => {
-                let obj = self
-                    .gc
-                    .take_id(id)
-                    .ok_or(RuntimeErr::ReferenceError(format!(
-                        "Reference {} not found",
-                        id
-                    )))?;
+                Instruction::CollectObject(strings) => {
+                    let mut res = HashMap::new();
+                    for name in strings.into_iter() {
+                        res.insert(name, pop_or(&mut data_stack)?);
+                    }
+                    data_stack.push(self.gc.ponga_into_gc_ref(Ponga::Object(res)));
+                }
+                Instruction::CollectSexpr(n) => {
+                    let mut res = Vec::new();
+                    for _ in 0..n {
+                        res.push(pop_or(&mut data_stack)?);
+                    }
+                    data_stack.push(Ponga::Sexpr(res));
+                }
+                Instruction::Call(num_args) => {
+                    let mut args = Vec::new();
+                    let func = data_stack.pop().ok_or(
+                        RuntimeErr::Other(
+                            format!("Expected {} args for function", num_args)
+                        )
+                    )?;
+                    for _ in 0..num_args {
+                        args.push(data_stack.pop().ok_or(
+                            RuntimeErr::Other(
+                                format!("Expected {} args for function", num_args)
+                            )
+                        )?);
+                    }
+                    match func {
+                        HFunc(id) => {
+                            data_stack.push(FUNCS[id].1(self, args)?)
+                        }
+                        CFunc(args_names, sexpr_id, state_id) => {
+                            let state_obj = self.get_id_obj_ref(state_id)?.clone();
 
-                let res = self.eval(obj)?;
+                            // Pop the entire state after we're done evaluating
+                            let ref_gc_obj = state_obj.borrow().unwrap();
+                            let state_map_ref = ref_gc_obj.extract_map_ref().unwrap();
+                            for (name, _) in state_map_ref.into_iter() {
+                                ins_stack.push(Instruction::Pop(name.clone()));
+                            } 
 
-                if res.is_copy() {
-                    self.gc.add_obj_with_id(res.clone(), id);
-                    Ok(res)
-                } else {
-                    self.gc.add_obj_with_id(res, id);
-                    self.eval(Ponga::Ref(id))
+                            // Pop all of the args before popping state
+                            for name in args_names.iter() {
+                                ins_stack.push(Instruction::Pop(name.clone()));
+                            } 
+
+                            // Push S-Expr to be evaluated
+                            let sexpr_obj = self.get_id_obj_ref(sexpr_id)?;
+                            let sexpr = sexpr_obj.borrow().unwrap().clone();
+                            data_stack.push(sexpr);
+                            ins_stack.push(Instruction::Eval);
+
+                            let state_map = state_obj.borrow()
+                                                     .unwrap()
+                                                     .clone()
+                                                     .extract_map()
+                                                     .unwrap();
+
+                            // Push the entire state, can just do now, don't need to delay
+                            for (name, val) in state_map.into_iter() {
+                                self.push_local(&name, val);
+                            } 
+
+                            // Push all of the names and arg values onto the stack
+                            for (name, val) in args_names.iter().zip(args.into_iter()) {
+                                self.push_local(&name, val);
+                            } 
+                        } 
+                        _ => return Err(RuntimeErr::TypeError(
+                            format!("Expected function, received {:?}", func)
+                        )),
+                    }
                 }
+                Instruction::Eval => {
+                    match pop_or(&mut data_stack)? {
+                        Ponga::Array(v) => {
+                            ins_stack.push(Instruction::CollectArray(v.len()));
+                            for i in v.into_iter() {
+                                data_stack.push(i);
+                                ins_stack.push(Instruction::Eval);
+                            }
+                        }
+                        Ponga::List(v) => {
+                            ins_stack.push(Instruction::CollectList(v.len()));
+                            for i in v.into_iter() {
+                                data_stack.push(i);
+                                ins_stack.push(Instruction::Eval);
+                            }
+                        }
+                        Ponga::Object(v) => {
+                            ins_stack.push(Instruction::CollectObject(
+                                v.keys().cloned().collect()
+                            ));
+                            for (_, i) in v.into_iter() {
+                                data_stack.push(i);
+                                ins_stack.push(Instruction::Eval);
+                            }
+                        }
+                        Ponga::Sexpr(v) => {
+                            let mut iter = v.into_iter();
+                            let func = iter.next().unwrap();
+                            // Goes in level for greater readability
+match func {
+    Identifier(s) => match s.as_str() {
+        "if" => {
+            if iter.len() != 3 {
+                return Err(RuntimeErr::Other(
+                    "if must have at three arguments".to_string()
+                ));
             }
-            Identifier(s) => {
-                let (obj, wh) = self.pop_identifier_obj(&s)?;
-                let obj = self.eval(obj)?;
-                self.push_whereval(&s, obj.clone(), wh);
-                Ok(obj)
+            // Can make this better if we push it later but should be fine for now
+            let cond = self.eval(iter.next().unwrap())?;
+            ins_stack.push(Instruction::Eval);
+            if cond != Ponga::False {
+                data_stack.push(iter.nth(0).unwrap()); 
+            } else {
+                data_stack.push(iter.nth(1).unwrap()); 
             }
-            cfunc@CFunc(_, _, _,) => {
-                Ok(self.gc.ponga_into_gc_ref(cfunc))
-            }
-            _ => Ok(pong),
+            continue;
         }
+        "lambda" => {
+            if iter.len() != 2 {
+                return Err(RuntimeErr::Other(
+                    "lambda must have two arguments".to_string()
+                ));
+            }
+            let first = iter.next().unwrap();
+            let body = iter.next().unwrap();
+
+            let mut cargs = Vec::new();
+            if !first.is_sexpr() {
+                return Err(RuntimeErr::Other(
+                    "first argument to lambda must be an s-expr with identifiers"
+                        .to_string()
+                ));
+            }
+
+            let inner = first.get_array()?;
+            for i in inner {
+                if !i.is_identifier() {
+                    return Err(RuntimeErr::Other(
+                        "first argument to lambda must be an s-expr with identifiers"
+                            .to_string()
+                    ));
+                }
+                cargs.push(i.extract_name()?);
+            }
+
+            let new_state = self.condense_locals();
+            let state_id = self.gc.add_obj(Ponga::Object(new_state));
+            let body_id = self.gc.add_obj(body);
+
+            data_stack.push(CFunc(cargs, body_id, state_id));
+            continue;
+        }
+        "define" => {
+            if iter.len() != 2 {
+                return Err(RuntimeErr::Other(
+                    "define must have two arguments".to_string()
+                ));
+            }
+            let name = iter.next().unwrap();
+            let val = iter.next().unwrap();
+
+            if name.is_identifier() {
+                ins_stack.push(Instruction::Define(name.extract_name()?));
+                ins_stack.push(Instruction::Eval);
+                data_stack.push(val);
+                continue;
+            } else if name.is_sexpr() {
+                let v = name.get_array()?;
+                if v.len() < 1 {
+                    return Err(RuntimeErr::Other(
+                        "define first argument must be an identifier or
+                         an S-Expr of at least one identifier".to_string()
+                    ));
+                }
+                let mut sexpr_iter = v.into_iter();
+                let new_name = sexpr_iter.next().unwrap();
+                let other_args = sexpr_iter.collect();
+
+                // Define new_name by the lambda created from the other args
+                ins_stack.push(Instruction::Define(new_name.extract_name()?));
+                
+                
+                let new_sexpr = Sexpr(vec![Identifier("lambda".to_string()),
+                                           Sexpr(other_args),
+                                           val]);
+                data_stack.push(new_sexpr);
+                continue;
+            } else {
+                return Err(RuntimeErr::Other(
+                    "define first argument must be an identifier or
+                     an S-Expr of identifiers".to_string()
+                ));
+
+            }
+        }
+        "set!" => {
+            if iter.len() != 2 {
+                return Err(RuntimeErr::Other(
+                    "set! must have two arguments".to_string()
+                ));
+            }
+            let name = iter.next().unwrap();
+            let val = iter.next().unwrap();
+            if !name.is_identifier() {
+                return Err(RuntimeErr::Other(
+                    "set! first argument must be an identifier".to_string()
+                ));
+            }
+
+            ins_stack.push(Instruction::Set(name.extract_name()?));
+            ins_stack.push(Instruction::Eval);
+            data_stack.push(val);
+            continue;
+        }
+        other => {
+            // must refer to a CFunc or HFunc
+            let ref_obj = self.get_identifier_obj_ref(other)?;
+            if !ref_obj.is_func() {
+                return Err(RuntimeErr::TypeError(
+                    format!("Expected function, received {:?}", ref_obj)
+                ));
+            }
+
+            let n_args = iter.len();
+            // Call this func with the rest of thingies as args
+            for arg in iter.rev() {
+                data_stack.push(arg);
+            }
+            data_stack.push(ref_obj.clone());
+            ins_stack.push(Instruction::Call(n_args));
+            continue;
+        }
+    }
+    cfunc@CFunc(_, _, _,) => {
+        let n_args = iter.len();
+        for arg in iter.rev() {
+            data_stack.push(arg);
+        }
+        data_stack.push(cfunc);
+        ins_stack.push(Instruction::Call(n_args));
+        continue;
+    }
+    hfunc@HFunc(_) => {
+        let n_args = iter.len();
+        for arg in iter.rev() {
+            data_stack.push(arg);
+        }
+        data_stack.push(hfunc);
+        ins_stack.push(Instruction::Call(n_args));
+        continue;
+    }
+    sexpr@Sexpr(_) => {
+        // Evaluate the first arg and then call
+        let n_args = iter.len();
+        for arg in iter.rev() {
+            data_stack.push(arg);
+        }
+        ins_stack.push(Instruction::Call(n_args));
+        data_stack.push(sexpr);
+        ins_stack.push(Instruction::Eval);
+        continue;
+    }
+    _ => return Err(RuntimeErr::TypeError(
+        format!("Expected function, received {:?}", func)
+    )),
+}
+                        }
+                        val => data_stack.push(val),
+                    }
+                }
+            }
+            if ins_stack.len() == 0 {
+                break;
+            }
+        }
+        pop_or(&mut data_stack)
     }
 
     pub fn is_func(&self, pong: &Ponga) -> bool {
@@ -567,4 +765,8 @@ pub fn run_file(s: &str) -> RunRes<Vec<RunRes<Ponga>>> {
     let mut contents = String::new();
     file.read_to_string(&mut contents)?;
     run_str(&contents)
+}
+
+pub fn pop_or<T>(vec: &mut Vec<T>) -> RunRes<T> {
+    vec.pop().ok_or(RuntimeErr::Other(format!("Expected value in stack")))
 }

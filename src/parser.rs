@@ -1,5 +1,6 @@
 use crate::types::*;
 use crate::ratio::Ratio;
+use crate::number::*;
 use nom::branch::alt;
 use nom::bytes::complete::{tag, take, take_while1};
 use nom::bytes::streaming::{is_not, take_while_m_n};

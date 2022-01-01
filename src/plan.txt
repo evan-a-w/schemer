@@ -1,0 +1,8 @@
+instructions:
+eval thing
+ - do eval and push onto stack
+call function with n args on stack
+ - store function in the instruction
+pop identifier local
+push identifier local (value on stack)
+define global

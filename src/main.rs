@@ -6,15 +6,21 @@ mod runtime;
 mod stdlib;
 mod tests;
 mod types;
-mod take_obj;
+mod number;
+mod instructions;
 
-use types::RunRes;
+use types::*;
+use parser::*;
+use number::*;
+use gc::*;
+use gc_obj::*;
+use runtime::*;
 
 fn run_tests_in_main() {
     tests::test_basic_garbage_collection_manual_binding();
 }
 
-fn main() -> RunRes<()> {
+fn run_file_main() -> RunRes<()> {
     use crate::runtime::run_file;
     let mut args = std::env::args();
     if args.len() != 2 {
@@ -24,4 +30,24 @@ fn main() -> RunRes<()> {
     let file_name = args.nth(1).unwrap();
     let _res = run_file(&file_name)?;
     Ok(())
+}
+
+fn main() -> RunRes<()> {
+    let parsed = pongascript_parser("
+    ((lambda (x) (+ x 1)) 2)
+    ")
+    .unwrap();
+    let mut runtime = Runtime::new();
+    let evald = parsed
+        .1
+        .into_iter()
+        .map(|x| runtime.eval(x))
+        .collect::<Vec<RunRes<Ponga>>>();
+    println!("{:?}", evald);
+    return Ok(());
+    let parsed = pongascript_parser("
+    (define (add-1 x) (+ x 1))
+    (add-1 2)
+    ")
+    .unwrap();
 }

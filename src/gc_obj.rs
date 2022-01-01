@@ -1,4 +1,5 @@
 use crate::types::*;
+use crate::number::*;
 use std::cell::UnsafeCell;
 use std::ops::Deref;
 use std::ops::DerefMut;

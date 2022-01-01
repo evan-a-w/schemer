@@ -3,6 +3,7 @@ use crate::gc_obj::*;
 use crate::parser::*;
 use crate::runtime::*;
 use crate::types::*;
+use crate::number::*;
 use std::collections::HashMap;
 use std::collections::LinkedList;
 
@@ -144,7 +145,7 @@ pub fn test_string_parse() {
 
 #[test]
 pub fn test_array_parser() {
-    use crate::types::Number::{Float, Int};
+    use crate::number::Number::{Float, Int};
     use Ponga::*;
     let res = ponga_parser("#(1   2.0  \"hi\"  )");
     assert!(
@@ -163,7 +164,7 @@ pub fn test_array_parser() {
 
 #[test]
 pub fn test_list_parser() {
-    use crate::types::Number::{Float, Int};
+    use crate::number::Number::{Float, Int};
     use Ponga::*;
     let res = ponga_parser("'(1   2.0  \"hi\"  )");
     assert!(
@@ -220,7 +221,7 @@ pub fn test_char_parser() {
 
 #[test]
 pub fn test_parser_sexpr() {
-    use crate::types::Number::{Float, Int};
+    use crate::number::Number::{Float, Int};
     use Ponga::*;
     let res = ponga_parser(
         "(define (foldl func accu alist)
