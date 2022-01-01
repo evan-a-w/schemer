@@ -99,7 +99,7 @@ impl Gc {
 
     pub fn print_all_gc_ob(&self) {
         for obj in self.ptrs.values() {
-            println!("id: {}, val: {:?}", obj.id, unsafe { &*obj.data.as_ptr() });
+            print!("id: {}, val: {:?}, ", obj.id, unsafe { &*obj.data.as_ptr() });
         }
     }
 }

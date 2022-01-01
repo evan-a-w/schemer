@@ -52,14 +52,16 @@ impl Ponga {
 
     pub fn is_copy(&self) -> bool {
         match self {
-            Ponga::Null => true,
-            Ponga::Number(_) => true,
-            Ponga::String(_) => true,
-            Ponga::Char(_) => true,
-            Ponga::Symbol(_) => true,
-            Ponga::Ref(_) => true,
-            Ponga::True => true,
-            Ponga::False => true,
+            Ponga::Null
+            | Ponga::Number(_)
+            | Ponga::String(_)
+            | Ponga::Char(_)
+            | Ponga::Symbol(_)
+            | Ponga::Ref(_)
+            | Ponga::CFunc(_, _, _)
+            | Ponga::HFunc(_)
+            | Ponga::True
+            | Ponga::False => true,
             _ => false,
         }
     }

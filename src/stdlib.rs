@@ -48,8 +48,7 @@ pub const FUNCS: &[(&str, fn(&mut Runtime, Vec<Ponga>) -> RunRes<Ponga>)] = &[
 pub fn transform_args(runtime: &mut Runtime, args: Vec<Ponga>) -> RunRes<Vec<Ponga>> {
     let mut res = Vec::new();
     for arg in args {
-        let arg = runtime.id_or_ref_peval(arg)?;
-        res.push(arg);
+        res.push(runtime.id_or_ref_peval(arg)?);
     }
     Ok(res)
 }
@@ -117,6 +116,7 @@ pub fn cons(runtime: &mut Runtime, mut args: Vec<Ponga>) -> RunRes<Ponga> {
 pub fn null(runtime: &mut Runtime, mut args: Vec<Ponga>) -> RunRes<Ponga> {
     args_assert_len(&mut args, 1, "null?")?;
     let mut args = transform_args(runtime, args)?;
+    println!("NULL ARGS: {:?}", args);
     let arg = args.pop().unwrap();
     match arg {
         Ponga::List(list) => Ok(runtime.gc.ponga_into_gc_ref(bool_to_ponga(list.is_empty()))),
@@ -136,7 +136,7 @@ pub fn null(runtime: &mut Runtime, mut args: Vec<Ponga>) -> RunRes<Ponga> {
                 ))),
             }
         }
-        _ => Err(RuntimeErr::TypeError(format!("null requires a list"))),
+        _ => Err(RuntimeErr::TypeError(format!("null? requires a list"))),
     }
 }
 
@@ -577,6 +577,7 @@ pub fn disp(runtime: &mut Runtime, mut args: Vec<Ponga>) -> RunRes<Ponga> {
 pub fn foldl(runtime: &mut Runtime, mut args: Vec<Ponga>) -> RunRes<Ponga> {
     args_assert_len(&mut args, 3, "foldl")?;
     let mut args = transform_args(runtime, args)?;
+    println!("ARGS: {:?}", args);
     let iterable = args.pop().unwrap();
     let mut acc = args.pop().unwrap();
     let func = args.pop().unwrap();
@@ -590,8 +591,9 @@ pub fn foldl(runtime: &mut Runtime, mut args: Vec<Ponga>) -> RunRes<Ponga> {
             }
         }
         if fail {
+            println!("FAIL: {:?}", func);
             return Err(RuntimeErr::TypeError(format!(
-                "first argument to map must be a function"
+                "first argument to foldl must be a function"
             )));
         }
     }
@@ -631,10 +633,10 @@ pub fn foldl(runtime: &mut Runtime, mut args: Vec<Ponga>) -> RunRes<Ponga> {
                     }
                     Ok(acc)
                 }
-                _ => Err(RuntimeErr::TypeError(format!("map requires an iterable"))),
+                _ => Err(RuntimeErr::TypeError(format!("foldl requires an iterable"))),
             }
         }
-        _ => Err(RuntimeErr::TypeError(format!("map requires an iterable"))),
+        _ => Err(RuntimeErr::TypeError(format!("foldl requires an iterable"))),
     }
 }
 
@@ -655,7 +657,7 @@ pub fn foldr(runtime: &mut Runtime, mut args: Vec<Ponga>) -> RunRes<Ponga> {
         }
         if fail {
             return Err(RuntimeErr::TypeError(format!(
-                "first argument to map must be a function"
+                "first argument to foldr must be a function"
             )));
         }
     }
@@ -695,10 +697,10 @@ pub fn foldr(runtime: &mut Runtime, mut args: Vec<Ponga>) -> RunRes<Ponga> {
                     }
                     Ok(acc)
                 }
-                _ => Err(RuntimeErr::TypeError(format!("map requires an iterable"))),
+                _ => Err(RuntimeErr::TypeError(format!("foldr requires an iterable"))),
             }
         }
-        _ => Err(RuntimeErr::TypeError(format!("map requires an iterable"))),
+        _ => Err(RuntimeErr::TypeError(format!("foldr requires an iterable"))),
     }
 }
 
@@ -751,6 +753,7 @@ pub fn vector_ref(runtime: &mut Runtime, mut args: Vec<Ponga>) -> RunRes<Ponga> 
 pub fn vector_append(runtime: &mut Runtime, mut args: Vec<Ponga>) -> RunRes<Ponga> {
     args_assert_len(&args, 2, "vector-append!")?;
     let mut args = transform_args(runtime, args)?;
+    println!("APPEND: {:?}", args);
     let n = args.pop().unwrap();
     let arg = args.pop().unwrap();
     match arg {

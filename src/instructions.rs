@@ -2,7 +2,7 @@ use crate::types::*;
 
 #[derive(Clone, Debug)]
 pub enum Instruction {
-    Eval,
+    Eval(Ponga),
     Call(usize),
     Pop(String),
     Push(String),

@@ -6,3 +6,36 @@ call function with n args on stack
 pop identifier local
 push identifier local (value on stack)
 define global
+
+(a b c d)
+
+call eval eval eval
+a    b    c    d
+
+call eval eval
+a    b    c    d
+
+func a b
+[]
+[]
+
+call(2) eval(a) eval(b)
+func
+
+call(2) eval(a)
+func b
+
+call(2)
+func b a
+
+push(pop) x 2
+args = a b
+func = func
+
+
+list[a, b, c]
+eval(a) eval(b) eval(c)
+c b a
+push(a) push(b) push(c)
+-> a b c
+

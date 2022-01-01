@@ -356,6 +356,25 @@ pub fn test_parser_sexpr() {
 }
 
 #[test]
+pub fn test_super_basic_run() {
+    let parsed = pongascript_parser("
+    (define i (foldl cons '() '(1 2 3 4 5)))
+    (equal? i '(5 4 3 2 1))
+    ")
+    .unwrap();
+    let mut runtime = Runtime::new();
+    let evald = parsed
+        .1
+        .into_iter()
+        .map(|x| runtime.eval(x))
+        .collect::<Vec<RunRes<Ponga>>>();
+    println!("{:?}", evald);
+    assert!(evald[1] == Ok(Ponga::True));
+
+    runtime.collect_garbage();
+}
+
+#[test]
 pub fn test_basic_run() {
     use Ponga::*;
     use RuntimeErr::*;
