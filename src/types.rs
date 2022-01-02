@@ -27,20 +27,6 @@ pub enum Ponga {
     Ref(Id),
 }
 
-#[derive(Debug, Clone, PartialEq)]
-pub enum Types {
-    Null,
-    Number,
-    String,
-    Char,
-    Symbol,
-    List,
-    Object,
-    Array,
-    Sexpr,
-    Bool,
-}
-
 impl Ponga {
     pub fn is_func(&self) -> bool {
         match self {
@@ -231,6 +217,7 @@ impl Ponga {
     pub fn extract_name(self) -> RunRes<String> {
         match self {
             Ponga::Identifier(s) => Ok(s),
+            Ponga::Symbol(s) => Ok(s),
             _ => Err(RuntimeErr::TypeError(format!("Expected an identifier, got {:?}", self))),
         }
     }
@@ -246,6 +233,15 @@ impl Ponga {
         match self {
             Ponga::Object(obj) => Some(obj),
             _ => None,
+        }
+    }
+
+    pub fn get_symbol_string(self) -> RunRes<String> {
+        match self {
+            Ponga::Symbol(s) => Ok(s),
+            _ => Err(RuntimeErr::TypeError(format!(
+                "Expected symbol, received {:?}", self)
+            )),
         }
     }
 

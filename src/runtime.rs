@@ -11,6 +11,8 @@ use std::fs::File;
 use std::io::prelude::*;
 use std::ptr::{self, NonNull};
 
+pub const MAX_STACK_SIZE: usize = 100_000;
+
 pub type Namespace = HashMap<String, Ponga>;
 
 pub type PriorityNamespace = HashMap<String, Vec<Ponga>>;
@@ -237,6 +239,11 @@ impl Runtime {
         let mut data_stack = vec![];
         let mut ins_stack = vec![Instruction::Eval(pong)];
         loop {
+            if ins_stack.len() > MAX_STACK_SIZE {
+                return Err(RuntimeErr::Other(format!(
+                    "Stack size exceeded max of {}", MAX_STACK_SIZE
+                )));
+            }
             // println!("Data stack: {:?}", data_stack);
             // println!("Ins stack: {:?}", ins_stack);
             // println!("State: {}", self.state_to_string());
@@ -397,7 +404,7 @@ match func {
         "if" => {
             if iter.len() != 3 {
                 return Err(RuntimeErr::Other(
-                    "if must have at three arguments".to_string()
+                    "if must have three arguments".to_string()
                 ));
             }
             // Can make this better if we push it later but should be fine for now
@@ -409,6 +416,17 @@ match func {
             };
             ins_stack.push(Instruction::Eval(val));
             continue;
+        }
+        "sym->id" => {
+            if iter.len() != 1 {
+                return Err(RuntimeErr::Other(
+                    "sym->id must have one argument".to_string()
+                ));
+            }
+            let val = self.id_or_ref_peval(iter.next().unwrap())?;
+            data_stack.push(
+                self.id_or_ref_peval(Ponga::Identifier(val.get_symbol_string()?))?
+            );
         }
         "lambda" => {
             if iter.len() != 2 {
