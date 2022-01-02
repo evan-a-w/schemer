@@ -811,11 +811,25 @@ match func {
                 parsed.0
             )));
         }
-        let evald = parsed
+        let mut evald = parsed
             .1
             .into_iter()
-            .map(|x| self.eval(x))
+            .map(|x| {
+                let res = self.eval(x);
+                match &res {
+                    Ok(_) => (),
+                    Err(e) => {
+                        println!("{}", e);
+                    }
+                }
+                res
+            })
             .collect::<Vec<RunRes<Ponga>>>();
+        let last = evald.pop().unwrap()?;
+        if last != Ponga::Null {
+            println!("{}", self.ponga_to_string(&last));
+            self.bind_global("last".to_string(), last);
+        }
         Ok(())
     }
 
