@@ -44,6 +44,8 @@ pub const FUNCS: &[(&str, fn(&mut Runtime, Vec<Ponga>) -> RunRes<Ponga>)] = &[
     ("string->list", string_to_list),
     ("list->string", list_to_string),
     ("show", show),
+    ("len", len),
+    ("reverse", reverse),
 ];
 
 pub fn transform_args(runtime: &mut Runtime, args: Vec<Ponga>) -> RunRes<Vec<Ponga>> {
@@ -875,4 +877,53 @@ pub fn show(runtime: &mut Runtime, mut args: Vec<Ponga>) -> RunRes<Ponga> {
     args_assert_len(&mut args, 1, "show")?;
     let s = args.pop().unwrap();
     Ok(Ponga::String(runtime.ponga_to_string(&s)))
+}
+
+pub fn len(runtime: &mut Runtime, mut args: Vec<Ponga>) -> RunRes<Ponga> {
+    args_assert_len(&mut args, 1, "len")?;
+    let mut args = transform_args(runtime, args)?;
+    let iterable = args.pop().unwrap();
+    
+    match iterable {
+        Ponga::Ref(id) => {
+            let obj = runtime.get_id_obj_ref(id)?.borrow().unwrap();
+            let r = obj.inner();
+            match r {
+                Ponga::List(list) => Ok(Ponga::Number(Number::Int(list.len() as isize))),
+                Ponga::Array(arr) => Ok(Ponga::Number(Number::Int(arr.len() as isize))),
+                Ponga::Object(o) => Ok(Ponga::Number(Number::Int(o.len() as isize))),
+                _ => Ok(Ponga::Number(Number::Int(1))),
+            }
+        }
+        Ponga::String(s) => Ok(Ponga::Number(Number::Int(s.len() as isize))),
+        _ => Ok(Ponga::Number(Number::Int(1))),
+    }
+}
+
+pub fn reverse(runtime: &mut Runtime, mut args: Vec<Ponga>) -> RunRes<Ponga> {
+    args_assert_len(&mut args, 1, "len")?;
+    let mut args = transform_args(runtime, args)?;
+    let iterable = args.pop().unwrap();
+    
+    match iterable {
+        Ponga::Ref(id) => {
+            let obj = runtime.get_id_obj_ref(id)?.borrow().unwrap();
+            let r = obj.inner();
+            match r {
+                Ponga::List(list) => {
+                    let res = Ponga::List(list.into_iter().rev().cloned().collect());
+                    drop(obj);
+                    Ok(runtime.gc.ponga_into_gc_ref(res))
+                }
+                Ponga::Array(arr) => {
+                    let res = Ponga::Array(arr.into_iter().rev().cloned().collect());
+                    drop(obj);
+                    Ok(runtime.gc.ponga_into_gc_ref(res))
+                }
+                _ => Ok(Ponga::Ref(id)),
+            }
+        }
+        Ponga::String(s) => Ok(Ponga::String(s.chars().rev().collect())),
+        _ => Ok(Ponga::Number(Number::Int(1))),
+    }
 }

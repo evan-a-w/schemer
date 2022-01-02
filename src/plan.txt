@@ -1,41 +1,7 @@
-instructions:
-eval thing
- - do eval and push onto stack
-call function with n args on stack
- - store function in the instruction
-pop identifier local
-push identifier local (value on stack)
-define global
+preprocess:
 
-(a b c d)
+(defmacro (name arg1 arg2 ...)
+[list of symbols and such]
+)
 
-call eval eval eval
-a    b    c    d
-
-call eval eval
-a    b    c    d
-
-func a b
-[]
-[]
-
-call(2) eval(a) eval(b)
-func
-
-call(2) eval(a)
-func b
-
-call(2)
-func b a
-
-push(pop) x 2
-args = a b
-func = func
-
-
-list[a, b, c]
-eval(a) eval(b) eval(c)
-c b a
-push(a) push(b) push(c)
--> a b c
-
+arg1 is first thing in s-expr, arg2 is 2nd, arg_n is rest
