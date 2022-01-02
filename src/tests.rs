@@ -426,6 +426,28 @@ pub fn test_closures() {
 }
 
 #[test]
+pub fn test_closures_better() {
+    let parsed = pongascript_parser("
+(let ((y 1))
+     (begin 
+         (define (func) (set! y (+ y 8)))
+         (func)
+         (func)
+         (display y)
+         y))
+    ")
+    .unwrap();
+    let mut runtime = Runtime::new();
+    let evald = parsed
+        .1
+        .into_iter()
+        .map(|x| runtime.eval(x))
+        .collect::<Vec<RunRes<Ponga>>>();
+    println!("{:?}", evald);
+    assert!(evald[0] == Ok(Ponga::Number(Number::Int(17))));
+}
+
+#[test]
 pub fn test_vec_to_list() {
     use Ponga::*;
     use RuntimeErr::*;
@@ -474,6 +496,20 @@ pub fn test_list_to_vec() {
 }
 
 #[test]
+pub fn test_simple_macro() {
+    let program = "
+(let ((x 1))
+     (while (< x 10)
+            (begin
+                (set! x (+ x 7))))
+     x)
+    ";
+    let mut prog_res = run_str(program).unwrap();
+    let res = prog_res.pop().unwrap().unwrap();
+    assert!(res == Ponga::Number(Number::Int(15)));
+}
+
+#[test]
 pub fn test_euler_p3() {
     let program = "
 (define (prime? n)
@@ -493,11 +529,11 @@ pub fn test_euler_p3() {
             (set! curr (/ curr x))
             '()))
 
-(while (lambda (x) (< x curr))
-       (lambda (x) (begin
-         (div-if-prime x)
-         (+ x 1)))
-       2)
+(let ((x 2))
+     (while (< x curr)
+            (begin
+                (div-if-prime x)
+                (set! x (+ x 1)))))
 
 curr
     ";

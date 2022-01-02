@@ -187,7 +187,6 @@ impl Runtime {
                 identifier
             )))
         }
-
     }
 
     pub fn push_local(&mut self, identifier: &str, pong: Ponga) {
@@ -195,6 +194,21 @@ impl Runtime {
             .entry(identifier.to_string())
             .or_insert(Vec::new())
             .push(pong);
+    }
+
+    pub fn clone_ref(&mut self, pong: Ponga) -> RunRes<Ponga> {
+        match pong {
+            Ponga::Ref(id) => {
+                let ref_obj = self.get_id_obj_ref(id)?;
+                let inner = ref_obj.borrow().unwrap();
+                Ok(inner.inner().clone())
+            }
+            Ponga::Identifier(s) => {
+                let ref_obj = self.get_identifier_obj_ref(&s)?;
+                Ok(ref_obj.clone())
+            }
+            _ => Ok(pong),
+        }
     }
 
     pub fn id_or_ref_peval(&mut self, pong: Ponga) -> RunRes<Ponga> {
@@ -231,7 +245,9 @@ impl Runtime {
     }
 
     pub fn state_to_string(&self) -> String {
-        format!("Locals: {:?}\nGlobals: {:?}", self.locals, self.globals)
+        format!("Locals: {}\nGlobals: {}",
+                self.ponga_to_string_no_id(&Ponga::Object(self.condense_locals())),
+                self.ponga_to_string_no_id(&Ponga::Object(self.globals.clone())))
     }
 
     pub fn eval(&mut self, pong: Ponga) -> RunRes<Ponga> {
@@ -244,14 +260,10 @@ impl Runtime {
                     "Stack size exceeded max of {}", MAX_STACK_SIZE
                 )));
             }
-            // println!("Data stack: {:?}", data_stack);
-            // println!("Ins stack: {:?}", ins_stack);
-            // println!("State: {}", self.state_to_string());
-            // println!("Doing: {:?}", ins_stack[ins_stack.len() - 1]);
-            // print!("Gc obj:");
-            // self.gc.print_all_gc_ob();
-            // println!("\n--------------\n");
             match ins_stack.pop().unwrap() {
+                Instruction::PushStack(pong) => {
+                    data_stack.push(pong);
+                }
                 Instruction::PopStack => {
                     data_stack.pop();
                 }
@@ -264,6 +276,7 @@ impl Runtime {
                     let val = self.pop_local(&s);
                     match opt_id {
                         Some(id) => {
+                            match self.set_identifier(&s, val.clone()) {_=>()}; 
                             let state_obj = self.get_id_obj(id)?;
                             let mut borrowed = state_obj.borrow_mut().unwrap();
                             borrowed.inner()
@@ -284,7 +297,6 @@ impl Runtime {
                     for _ in 0..n {
                         res.push(pop_or(&mut data_stack)?);
                     }
-                    // println!("Collecting array {:?}", res);
                     data_stack.push(self.gc.ponga_into_gc_ref(Ponga::Array(res)));
                 }
                 Instruction::CollectList(n) => {
@@ -292,7 +304,6 @@ impl Runtime {
                     for _ in 0..n {
                         res.push_back(pop_or(&mut data_stack)?);
                     }
-                    // println!("Collecting list {:?}", res);
                     data_stack.push(self.gc.ponga_into_gc_ref(Ponga::List(res)));
                 }
                 Instruction::CollectObject(strings) => {
@@ -328,9 +339,6 @@ impl Runtime {
                             data_stack.push(FUNCS[id].1(self, args)?);
                         }
                         CFunc(args_names, sexpr_id, state_id) => {
-                    // DEBUG
-                    let targ = Ponga::Array(args);
-                    let args = targ.get_array()?;
                             let state_obj = self.get_id_obj_ref(state_id)?.clone();
 
                             // Pop the entire state after we're done evaluating
@@ -344,7 +352,7 @@ impl Runtime {
                             // Pop all of the args before popping state
                             for name in args_names.iter() {
                                 ins_stack.push(Instruction::Pop(name.clone(),
-                                                                Some(state_id)));
+                                                                None));
                             } 
 
                             // Push S-Expr to be evaluated
@@ -368,6 +376,24 @@ impl Runtime {
                                 self.push_local(&name, val);
                             } 
                         } 
+                        MFunc(args_names, sexpr_id) => {
+                            // Pop all of the args before popping state
+                            for name in args_names.iter() {
+                                ins_stack.push(Instruction::Pop(name.clone(),
+                                                                None));
+                            }
+
+                            // Push all of the names and arg values onto the stack
+                            for (name, val) in args_names.iter().rev().zip(args.into_iter()) {
+                                self.push_local(&name, val);
+                            } 
+
+                            // Push S-Expr to be evaluated
+                            let sexpr_obj = self.get_id_obj_ref(sexpr_id)?;
+                            let sexpr = sexpr_obj.borrow().unwrap().clone();
+                            let flipped = sexpr.flip_code_vals();
+                            ins_stack.push(Instruction::Eval(flipped));
+                        }
                         o => return Err(RuntimeErr::TypeError(
                             format!("Expected function, received {:?}!", o)
                         )),
@@ -408,7 +434,8 @@ match func {
                 ));
             }
             // Can make this better if we push it later but should be fine for now
-            let cond = self.eval(iter.next().unwrap())?;
+            let cond = self.id_or_ref_peval(iter.next().unwrap())?;
+            let cond = self.eval(cond)?;
             let val = if cond != Ponga::False {
                 iter.nth(0).unwrap()
             } else {
@@ -416,6 +443,21 @@ match func {
             };
             ins_stack.push(Instruction::Eval(val));
             continue;
+        }
+        "$FLIP" => {
+            if iter.len() != 1 {
+                return Err(RuntimeErr::Other(
+                    "$FLIP must have one argument".to_string()
+                ));
+            }
+            let val = iter.next().unwrap();
+            ins_stack.push(Instruction::Eval(val.flip_code_vals()));
+            continue;
+        }
+        "$DELAY" => {
+            for i in iter {
+                data_stack.push(i);
+            }
         }
         "sym->id" => {
             if iter.len() != 1 {
@@ -456,11 +498,81 @@ match func {
                 cargs.push(i.extract_name()?);
             }
 
-            let new_state = self.condense_locals();
-            let state_id = self.gc.add_obj(Ponga::Object(new_state));
+            let new_state = Ponga::Object(self.condense_locals());
+            let state_id = self.gc.add_obj(new_state);
             let body_id = self.gc.add_obj(body);
 
+
             data_stack.push(CFunc(cargs, body_id, state_id));
+            continue;
+        }
+        "open-lambda" => {
+            if iter.len() != 2 {
+                return Err(RuntimeErr::Other(
+                    "lambda must have two arguments".to_string()
+                ));
+            }
+            let first = iter.next().unwrap();
+            let body = iter.next().unwrap();
+
+            let mut cargs = Vec::new();
+            if !first.is_sexpr() {
+                return Err(RuntimeErr::Other(
+                    "first argument to lambda must be an s-expr with identifiers"
+                        .to_string()
+                ));
+            }
+
+            let inner = first.get_array()?;
+            for i in inner {
+                if !i.is_identifier() {
+                    return Err(RuntimeErr::Other(
+                        "first argument to lambda must be an s-expr with identifiers"
+                            .to_string()
+                    ));
+                }
+                cargs.push(i.extract_name()?);
+            }
+
+            let new_state = Ponga::Object(HashMap::new());
+            let state_id = self.gc.add_obj(new_state);
+            let body_id = self.gc.add_obj(body);
+
+
+            data_stack.push(CFunc(cargs, body_id, state_id));
+            continue;
+        }
+        "mac" => {
+            if iter.len() != 2 {
+                return Err(RuntimeErr::Other(
+                    "mac must have two arguments".to_string()
+                ));
+            }
+            let first = iter.next().unwrap();
+            let body = iter.next().unwrap().flip_code_vals();
+
+            let mut cargs = Vec::new();
+            if !first.is_sexpr() {
+                return Err(RuntimeErr::Other(
+                    "first argument to mac must be an s-expr with identifiers"
+                        .to_string()
+                ));
+            }
+
+            let inner = first.get_array()?;
+            for i in inner {
+                if !i.is_identifier() {
+                    return Err(RuntimeErr::Other(
+                        "first argument to mac must be an s-expr with identifiers"
+                            .to_string()
+                    ));
+                }
+                cargs.push(i.extract_name()?);
+            }
+
+            let body_id = self.gc.add_obj(body);
+
+            data_stack.push(MFunc(cargs, body_id));
             continue;
         }
         "begin" => {
@@ -479,13 +591,17 @@ match func {
             continue;
         }
         "let" => {
-            if iter.len() != 2 {
+            if iter.len() < 2 {
                 return Err(RuntimeErr::Other(
-                    "let must have two arguments".to_string()
+                    "let must have at least two arguments".to_string()
                 ));
             }
             let first = iter.next().unwrap();
-            let body = iter.next().unwrap();
+            let mut body = vec![Ponga::Identifier("begin".to_string())];
+            for arg in iter {
+                body.push(arg);
+            }
+            let body = Ponga::Sexpr(body);
 
             if !first.is_sexpr() {
                 return Err(RuntimeErr::Other(
@@ -566,6 +682,43 @@ match func {
 
             }
         }
+        "defmacro" => {
+            if iter.len() != 2 {
+                return Err(RuntimeErr::Other(
+                    "defmacro must have two arguments".to_string()
+                ));
+            }
+            let name = iter.next().unwrap();
+            let val = iter.next().unwrap();
+
+            if name.is_sexpr() {
+                let v = name.get_array()?;
+                if v.len() < 1 {
+                    return Err(RuntimeErr::Other(
+                        "defmacro first arg must be sexpr".to_string()
+                    ));
+                }
+                let mut sexpr_iter = v.into_iter();
+                let new_name = sexpr_iter.next().unwrap();
+                let other_args = sexpr_iter.collect();
+
+                // Define new_name by the lambda created from the other args
+                ins_stack.push(Instruction::Define(new_name.extract_name()?));
+                
+                
+                let new_sexpr = Sexpr(vec![Identifier("mac".to_string()),
+                                           Sexpr(other_args),
+                                           val]);
+                ins_stack.push(Instruction::Eval(new_sexpr));
+                continue;
+            } else {
+                return Err(RuntimeErr::Other(
+                    "define first argument must be an identifier or
+                     an S-Expr of identifiers".to_string()
+                ));
+
+            }
+        }
         "set!" => {
             if iter.len() != 2 {
                 return Err(RuntimeErr::Other(
@@ -585,22 +738,27 @@ match func {
             continue;
         }
         other => {
-            // must refer to a CFunc or HFunc
             let ref_obj = self.get_identifier_obj_ref(other)?;
-            if !ref_obj.is_func() {
+            if ref_obj.is_func() {
+                let n_args = iter.len();
+                ins_stack.push(Instruction::Call(n_args));
+                data_stack.push(ref_obj.clone());
+                if ref_obj.is_macro() {
+                    for arg in iter {
+                        data_stack.push(arg);
+                    }
+                } else {
+                    // Call this func with the rest of thingies as args
+                    for arg in iter {
+                        ins_stack.push(Instruction::Eval(arg));
+                    }
+                }
+                continue;
+            } else {
                 return Err(RuntimeErr::TypeError(
                     format!("Expected function, received {:?}", ref_obj)
                 ));
             }
-
-            let n_args = iter.len();
-            ins_stack.push(Instruction::Call(n_args));
-            // Call this func with the rest of thingies as args
-            for arg in iter {
-                ins_stack.push(Instruction::Eval(arg));
-            }
-            data_stack.push(ref_obj.clone());
-            continue;
         }
     }
     cfunc@CFunc(_, _, _,) => {
@@ -610,6 +768,15 @@ match func {
             ins_stack.push(Instruction::Eval(arg));
         }
         data_stack.push(cfunc);
+        continue;
+    }
+    mfunc@MFunc(_, _) => {
+        let n_args = iter.len();
+        ins_stack.push(Instruction::Call(n_args));
+        for arg in iter {
+            ins_stack.push(Instruction::PushStack(arg.flip_code_vals()));
+        }
+        data_stack.push(mfunc);
         continue;
     }
     hfunc@HFunc(_) => {
@@ -636,8 +803,16 @@ match func {
     )),
 }
                         }
-                        val => {
-                            data_stack.push(self.id_or_ref_peval(val)?);
+                        Identifier(s) => {
+                            let ref_obj = self.get_identifier_obj_ref(&s)?;
+                            if !ref_obj.is_identifier() {
+                                ins_stack.push(Instruction::Eval(ref_obj.clone()));
+                            } else {
+                                data_stack.push(ref_obj.clone());
+                            }
+                        }
+                        _ => {
+                            data_stack.push(val);
                         }
                     }
                 }
@@ -653,6 +828,7 @@ match func {
         match pong {
             Ponga::HFunc(_) => true,
             Ponga::CFunc(_, _, _) => true,
+            Ponga::MFunc(_, _) => true,
             Ponga::Identifier(s) => {
                 let f = self.get_identifier_obj_ref(s).unwrap();
                 f.is_func()
@@ -763,21 +939,24 @@ match func {
             Ponga::True => format!("{}", ponga),
             Ponga::Char(c) => format!("{}", ponga),
             Ponga::Null => format!("{}", ponga),
-            Ponga::Symbol(s) => format!("{}", ponga),
-            Ponga::HFunc(id) => format!("Internal function: {}", FUNCS[*id].0),
+            Ponga::Symbol(s) => format!("'{}", ponga),
+            Ponga::HFunc(id) => format!("{}", FUNCS[*id].0),
             Ponga::CFunc(args, _, stateid) => {
                 let obj = self.get_id_obj_ref(*stateid).unwrap();
                 let obj_ref = obj.borrow().unwrap();
                 let state = obj_ref.inner();
-                let state_str = self.ponga_to_string(state);
+                let state_str = self.ponga_to_string_no_id(state);
                 format!("Compound function with args {:#?}, state {}", args, state_str)
             }
-            Ponga::Sexpr(a) => format!("S-expression: `{:?}`", a),
+            Ponga::MFunc(args, _) => {
+                format!("Macro with args {:#?}", args)
+            }
+            Ponga::Sexpr(a) => format!("({})", a.iter().map(|p| self.ponga_to_string(p)).format(" ")),
             Ponga::Identifier(s) => {
                 let obj = match self.get_identifier_obj_ref(s) {
                     Ok(val) => val,
                     Err(_) => {
-                        return format!("Identifier {} (not found)", s);
+                        return format!("{}", s);
                     }
                 };
                 self.ponga_to_string(obj)
@@ -788,10 +967,10 @@ match func {
             }
             Ponga::Object(o) => {
                 format!(
-                    "'({})",
+                    "[{}]",
                     o.iter()
-                        .map(|(k, v)| format!("'({} {})", k.to_string(), self.ponga_to_string(v)))
-                        .format(" ")
+                        .map(|(k, v)| format!("{}: {}", k.to_string(), self.ponga_to_string(v)))
+                        .format(", ")
                 )
             }
             Ponga::Array(arr) => {
@@ -799,6 +978,51 @@ match func {
             }
             Ponga::List(l) => {
                 format!("'({})", l.iter().map(|p| self.ponga_to_string(p)).format(" "))
+            }
+        }
+    }
+
+    pub fn ponga_to_string_no_id(&self, ponga: &Ponga) -> String {
+        match ponga {
+            Ponga::Number(n) => format!("{}", ponga),
+            Ponga::String(s) => format!("{}", ponga),
+            Ponga::False => format!("{}", ponga),
+            Ponga::True => format!("{}", ponga),
+            Ponga::Char(c) => format!("{}", ponga),
+            Ponga::Null => format!("{}", ponga),
+            Ponga::Symbol(s) => format!("'{}", ponga),
+            Ponga::HFunc(id) => format!("{}", FUNCS[*id].0),
+            Ponga::CFunc(args, _, stateid) => {
+                let obj = self.get_id_obj_ref(*stateid).unwrap();
+                let obj_ref = obj.borrow().unwrap();
+                let state = obj_ref.inner();
+                let state_str = self.ponga_to_string_no_id(state);
+                format!("Compound function with args {:#?}, state {}", args, state_str)
+            }
+            Ponga::MFunc(args, _) => {
+                format!("Macro with args {:#?}", args)
+            }
+            Ponga::Sexpr(a) => format!("({})", a.iter().map(|p| self.ponga_to_string_no_id(p)).format(" ")),
+            Ponga::Identifier(s) => {
+                format!("{}", s)
+            }
+            Ponga::Ref(id) => {
+                let obj = self.get_id_obj_ref(*id).unwrap().borrow().unwrap();
+                self.ponga_to_string_no_id(obj.inner())
+            }
+            Ponga::Object(o) => {
+                format!(
+                    "[{}]",
+                    o.iter()
+                        .map(|(k, v)| format!("{}: {}", k.to_string(), self.ponga_to_string_no_id(v)))
+                        .format(", ")
+                )
+            }
+            Ponga::Array(arr) => {
+                format!("#({})", arr.iter().map(|p| self.ponga_to_string_no_id(p)).format(" "))
+            }
+            Ponga::List(l) => {
+                format!("'({})", l.iter().map(|p| self.ponga_to_string_no_id(p)).format(" "))
             }
         }
     }
@@ -876,7 +1100,11 @@ pub fn run_str(s: &str) -> RunRes<Vec<RunRes<Ponga>>> {
         .collect::<Vec<RunRes<Ponga>>>();
     let last = &evald[evald.len() - 1];
     match last {
-        Ok(v) => println!("Program returned: {}", runtime.ponga_to_string(v)),
+        Ok(v) => {
+            if !v.is_null() {
+                println!("Program returned: {}", runtime.ponga_to_string(v));
+            }
+        }
         Err(e) => println!("Error: {:?}", e),
     };
     Ok(evald)

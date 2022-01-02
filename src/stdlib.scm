@@ -16,16 +16,11 @@
                                 (go (+ var 1)))))))
         (go init)))
 
-(define (while-glob-state pred symbol func)
-        (let ((go (lambda () (if (pred (sym->id symbol))
-                                 (begin
-                                   (func)
-                                   (go))
-                                 '()))))
-        (go)))
-        
-(define (while pred step val)
-        (let ((go (lambda (x) (if (pred x)
-                                  (go (step x))
-                                  x))))
-              (go val)))
+(defmacro (while condi expr) 
+     (let ((WHILE_GO (open-lambda ()
+          (if condi
+              (begin
+                  expr
+                  (WHILE_GO))
+              '()))))
+          (WHILE_GO)))

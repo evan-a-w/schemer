@@ -21,6 +21,7 @@ pub enum Ponga {
     Array(Vec<Ponga>),
     Sexpr(Vec<Ponga>),
     CFunc(Vec<String>, Id, Id), // args, sexpr_id, state_id
+    MFunc(Vec<String>, Id),
     HFunc(FuncId),
     True,
     False,
@@ -30,8 +31,16 @@ pub enum Ponga {
 impl Ponga {
     pub fn is_func(&self) -> bool {
         match self {
-            Ponga::CFunc(_, _, _) => true,
-            Ponga::HFunc(_) => true,
+            Ponga::CFunc(_, _, _)
+            | Ponga::HFunc(_)
+            | Ponga::MFunc(_, _) => true,
+            _ => false,
+        }
+    }
+
+    pub fn is_macro(&self) -> bool {
+        match self {
+            Ponga::MFunc(_, _) => true,
             _ => false,
         }
     }
@@ -45,7 +54,9 @@ impl Ponga {
             | Ponga::Symbol(_)
             | Ponga::Ref(_)
             | Ponga::CFunc(_, _, _)
+            | Ponga::MFunc(_, _)
             | Ponga::HFunc(_)
+            | Ponga::Sexpr(_)
             | Ponga::True
             | Ponga::False => true,
             _ => false,
@@ -228,6 +239,14 @@ impl Ponga {
             _ => Err(RuntimeErr::TypeError(format!("Expected an identifier, got {:?}", self))),
         }
     }
+    
+    pub fn extract_name_ref(&self) -> RunRes<&String> {
+        match self {
+            Ponga::Identifier(s) => Ok(s),
+            Ponga::Symbol(s) => Ok(s),
+            _ => Err(RuntimeErr::TypeError(format!("Expected an identifier, got {:?}", self))),
+        }
+    }
 
     pub fn extract_map(self) -> Option<HashMap<String, Ponga>> {
         match self {
@@ -327,6 +346,16 @@ impl Ponga {
             _ => Err(RuntimeErr::TypeError(format!("Expected char, received {:?}", self))),
         }
     }
+
+    pub fn flip_code_vals(self) -> Ponga {
+        match self {
+            Ponga::List(l) => Ponga::Sexpr(l.into_iter().map(|v| v.flip_code_vals()).collect()),
+            Ponga::Sexpr(p) => Ponga::List(p.into_iter().map(|v| v.flip_code_vals()).collect()),
+            Ponga::Symbol(s) => Ponga::Identifier(s),
+            Ponga::Identifier(s) => Ponga::Symbol(s),
+            _ => self,
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -393,6 +422,7 @@ impl std::fmt::Display for Ponga {
             Ponga::List(l) => write!(f, "{:?}", l),
             Ponga::HFunc(id) => write!(f, "Internal function with id {}", id),
             Ponga::CFunc(args, _, state) => write!(f, "Compound function with args {:?} and state {:?}", args, state),
+            Ponga::MFunc(args, _) => write!(f, "Macro with args {:?}", args),
             Ponga::Sexpr(a) => write!(f, "S-expression {:?}", a),
             Ponga::Identifier(s) => write!(f, "Identifier {}", s),
             Ponga::Ref(id) => write!(f, "Ref {}", id),

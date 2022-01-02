@@ -13,4 +13,5 @@ pub enum Instruction {
     CollectList(usize),
     CollectSexpr(usize),
     PopStack,
+    PushStack(Ponga),
 }

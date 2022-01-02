@@ -120,7 +120,6 @@ pub fn null(runtime: &mut Runtime, mut args: Vec<Ponga>) -> RunRes<Ponga> {
     args_assert_len(&mut args, 1, "null?")?;
     let mut args = transform_args(runtime, args)?;
     let arg = args.pop().unwrap();
-    println!("NULL ARG: {} ({:?})", runtime.ponga_to_string(&arg), arg);
     match arg {
         Ponga::List(list) => Ok(bool_to_ponga(list.is_empty())),
         Ponga::Null => Ok(Ponga::True),
