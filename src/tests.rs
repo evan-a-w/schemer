@@ -472,3 +472,36 @@ pub fn test_list_to_vec() {
 
     runtime.collect_garbage();
 }
+
+#[test]
+pub fn test_euler_p3() {
+    let program = "
+(define (prime? n)
+    (let ((lim (sqrt n))
+          (go (lambda (curr)
+              (if (<= curr lim)
+                  (if (= 0 (modulo n curr)) 
+                      #f
+                      (go (+ curr 1)))
+                  #t))))
+         (go 2)))
+
+(define curr 600851475143)
+
+(define (div-if-prime x)
+        (if (and (prime? x) (= 0 (modulo curr x)))
+            (set! curr (/ curr x))
+            '()))
+
+(while (lambda (x) (< x curr))
+       (lambda (x) (begin
+         (div-if-prime x)
+         (+ x 1)))
+       2)
+
+curr
+    ";
+    let mut prog_res = run_str(program).unwrap();
+    let res = prog_res.pop().unwrap().unwrap();
+    assert!(res == Ponga::Number(Number::Int(6857)));
+}

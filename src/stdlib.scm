@@ -16,7 +16,7 @@
                                 (go (+ var 1)))))))
         (go init)))
 
-(define (while pred symbol func)
+(define (while-glob-state pred symbol func)
         (let ((go (lambda () (if (pred (sym->id symbol))
                                  (begin
                                    (func)
@@ -24,3 +24,8 @@
                                  '()))))
         (go)))
         
+(define (while pred step val)
+        (let ((go (lambda (x) (if (pred x)
+                                  (go (step x))
+                                  x))))
+              (go val)))
