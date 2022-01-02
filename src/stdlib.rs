@@ -43,6 +43,7 @@ pub const FUNCS: &[(&str, fn(&mut Runtime, Vec<Ponga>) -> RunRes<Ponga>)] = &[
     ("sqrt", sqrt),
     ("string->list", string_to_list),
     ("list->string", list_to_string),
+    ("show", show),
 ];
 
 pub fn transform_args(runtime: &mut Runtime, args: Vec<Ponga>) -> RunRes<Vec<Ponga>> {
@@ -868,4 +869,10 @@ pub fn list_to_string(runtime: &mut Runtime, mut args: Vec<Ponga>) -> RunRes<Pon
         }
         _ => Err(RuntimeErr::TypeError(format!("string->list requires a string"))),
     }
+}
+
+pub fn show(runtime: &mut Runtime, mut args: Vec<Ponga>) -> RunRes<Ponga> {
+    args_assert_len(&mut args, 1, "show")?;
+    let s = args.pop().unwrap();
+    Ok(Ponga::String(runtime.ponga_to_string(&s)))
 }
