@@ -4,7 +4,7 @@ use crate::types::*;
 pub enum Instruction {
     Eval(Ponga),
     Call(usize),
-    Pop(String),
+    Pop(String, Option<usize>),
     Push(String),
     Define(String),
     Set(String),
@@ -12,4 +12,5 @@ pub enum Instruction {
     CollectObject(Vec<String>),
     CollectList(usize),
     CollectSexpr(usize),
+    PopStack,
 }

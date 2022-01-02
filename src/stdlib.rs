@@ -27,9 +27,7 @@ pub const FUNCS: &[(&str, fn(&mut Runtime, Vec<Ponga>) -> RunRes<Ponga>)] = &[
     (">", gt),
     ("modulo", modulus),
     ("cond", cond),
-    ("begin", begin),
     ("display", disp),
-    ("let", let_),
     ("map", map_),
     ("foldl", foldl),
     ("foldr", foldr),
@@ -349,6 +347,7 @@ pub fn teq(runtime: &mut Runtime, mut args: Vec<Ponga>) -> RunRes<Ponga> {
     // println!("EQUAL {:?}", args);
     let snd = args.pop().unwrap();
     let fst = args.pop().unwrap();
+    // Ok for now
     Ok(bool_to_ponga(
         runtime.ponga_to_string(&fst) == runtime.ponga_to_string(&snd)
     ))
@@ -475,57 +474,6 @@ pub fn cond(runtime: &mut Runtime, mut args: Vec<Ponga>) -> RunRes<Ponga> {
         }
     }
     Ok(Ponga::Null)
-}
-
-pub fn let_(runtime: &mut Runtime, mut args: Vec<Ponga>) -> RunRes<Ponga> {
-    args_assert_len(&args, 2, "let")?;
-    let body = args.pop().unwrap();
-    let pairs = args.pop().unwrap();
-
-    match pairs {
-        Ponga::Sexpr(v) => {
-            let mut names = Vec::new();
-            for i in v.into_iter() {
-                match i {
-                    Ponga::Sexpr(v2) => {
-                        if v2.len() != 2 {
-                            return Err(RuntimeErr::TypeError(format!(
-                                "First arg to let must be S-Expr of S-Expr pairs"
-                            )));
-                        }
-                        let mut iter = v2.into_iter();
-                        let first = iter.next().unwrap();
-                        if !first.is_identifier() {
-                            return Err(RuntimeErr::TypeError(format!(
-                                "Name in let must be an identifier"
-                            )));
-                        }
-                        let second = runtime.eval(iter.next().unwrap())?;
-                        let name = first.extract_name()?;
-                        runtime.push_local(&name, second);
-                        names.push(name);
-                    }
-                    _ => return Err(RuntimeErr::TypeError(format!(
-                        "let requires S-Exprs inside first arg (not {:?})",
-                        i
-                    ))),
-                }
-            }
-            let res = runtime.eval(body)?;
-            for name in names.into_iter() {
-                runtime.pop_identifier_obj(&name)?;
-            }
-            Ok(res)
-        }
-        _ => Err(RuntimeErr::TypeError(format!(
-            "let requires S-Expr first arg"
-        ))),
-    }
-}
-
-pub fn begin(runtime: &mut Runtime, mut args: Vec<Ponga>) -> RunRes<Ponga> {
-    args_assert_gt(&args, 0, "begin")?;
-    Ok(args.pop().unwrap())
 }
 
 pub fn disp(runtime: &mut Runtime, mut args: Vec<Ponga>) -> RunRes<Ponga> {

@@ -31,7 +31,7 @@ pub enum WhereVar {
 impl Runtime {
     pub fn new() -> Self {
         let mut global_funcs = Namespace::new();
-        let mut gc = Gc::new();
+        let gc = Gc::new();
 
         for (i, val) in FUNCS.iter().enumerate() {
             global_funcs.insert(val.0.to_string(), Ponga::HFunc(i));
@@ -245,14 +245,31 @@ impl Runtime {
             // self.gc.print_all_gc_ob();
             // println!("\n--------------\n");
             match ins_stack.pop().unwrap() {
+                Instruction::PopStack => {
+                    data_stack.pop();
+                }
                 Instruction::Define(s) => {
                     self.bind_global(s, pop_or(&mut data_stack)?);
                     data_stack.push(Ponga::Null);
                 }
                 Instruction::Push(s) => self.push_local(&s, pop_or(&mut data_stack)?),
-                Instruction::Pop(s) => { self.pop_local(&s); },
+                Instruction::Pop(s, opt_id) => {
+                    let val = self.pop_local(&s);
+                    match opt_id {
+                        Some(id) => {
+                            let state_obj = self.get_id_obj(id)?;
+                            let mut borrowed = state_obj.borrow_mut().unwrap();
+                            borrowed.inner()
+                                    .extract_map_ref_mut()
+                                    .unwrap()
+                                    .insert(s, val);
+                        }
+                        _ => (),
+                    }
+                },
                 Instruction::Set(s) => { 
-                    self.set_identifier(&s, pop_or(&mut data_stack)?)?;
+                    let data = pop_or(&mut data_stack)?;
+                    self.set_identifier(&s, data)?;
                     data_stack.push(Ponga::Null);
                 }
                 Instruction::CollectArray(n) => {
@@ -304,18 +321,23 @@ impl Runtime {
                             data_stack.push(FUNCS[id].1(self, args)?);
                         }
                         CFunc(args_names, sexpr_id, state_id) => {
+                    // DEBUG
+                    let targ = Ponga::Array(args);
+                    let args = targ.get_array()?;
                             let state_obj = self.get_id_obj_ref(state_id)?.clone();
 
                             // Pop the entire state after we're done evaluating
                             let ref_gc_obj = state_obj.borrow().unwrap();
                             let state_map_ref = ref_gc_obj.extract_map_ref().unwrap();
                             for (name, _) in state_map_ref.into_iter() {
-                                ins_stack.push(Instruction::Pop(name.clone()));
+                                ins_stack.push(Instruction::Pop(name.clone(),
+                                                                Some(state_id)));
                             } 
 
                             // Pop all of the args before popping state
                             for name in args_names.iter() {
-                                ins_stack.push(Instruction::Pop(name.clone()));
+                                ins_stack.push(Instruction::Pop(name.clone(),
+                                                                Some(state_id)));
                             } 
 
                             // Push S-Expr to be evaluated
@@ -380,11 +402,12 @@ match func {
             }
             // Can make this better if we push it later but should be fine for now
             let cond = self.eval(iter.next().unwrap())?;
-            if cond != Ponga::False {
-                ins_stack.push(Instruction::Eval(iter.nth(0).unwrap())); 
+            let val = if cond != Ponga::False {
+                iter.nth(0).unwrap()
             } else {
-                ins_stack.push(Instruction::Eval(iter.nth(1).unwrap())); 
-            }
+                iter.nth(1).unwrap()
+            };
+            ins_stack.push(Instruction::Eval(val));
             continue;
         }
         "lambda" => {
@@ -421,6 +444,67 @@ match func {
 
             data_stack.push(CFunc(cargs, body_id, state_id));
             continue;
+        }
+        "begin" => {
+            if iter.len() < 1 {
+                return Err(RuntimeErr::Other(
+                    "begin must have at least one argument".to_string()
+                ));
+            }
+            let mut iter = iter.rev();
+            let first = iter.next().unwrap();
+            ins_stack.push(Instruction::Eval(first));
+            for i in iter {
+                ins_stack.push(Instruction::PopStack);
+                ins_stack.push(Instruction::Eval(i));
+            }
+            continue;
+        }
+        "let" => {
+            if iter.len() != 2 {
+                return Err(RuntimeErr::Other(
+                    "let must have two arguments".to_string()
+                ));
+            }
+            let first = iter.next().unwrap();
+            let body = iter.next().unwrap();
+
+            if !first.is_sexpr() {
+                return Err(RuntimeErr::Other(
+                    "first argument to let must be an s-expr with identifiers"
+                        .to_string()
+                ));
+            }
+            
+            let v = first.get_array()?;
+            let mut names = Vec::new();
+            for pair in v.into_iter().rev() {
+                if !pair.is_sexpr() {
+                    return Err(RuntimeErr::Other(
+                        "each pair in let must be S-Expr".to_string()
+                    ));
+                }
+                let inner_arr = pair.get_array()?;
+                if inner_arr.len() != 2 {
+                    return Err(RuntimeErr::Other(
+                        "let requires pairs of S-Exprs".to_string()
+                    ));
+                }
+                let mut inner_iter = inner_arr.into_iter();
+                let id = inner_iter.next().unwrap().extract_name()?;
+                let val = inner_iter.next().unwrap();
+
+                names.push((id.clone(), val));
+                ins_stack.push(Instruction::Pop(id, None));
+
+            }
+            ins_stack.push(Instruction::Eval(body));
+
+            for (name, val) in names {
+                ins_stack.push(Instruction::Push(name));
+                ins_stack.push(Instruction::Eval(val));
+            }
+
         }
         "define" => {
             if iter.len() != 2 {
@@ -534,7 +618,9 @@ match func {
     )),
 }
                         }
-                        val => data_stack.push(self.id_or_ref_peval(val)?),
+                        val => {
+                            data_stack.push(self.id_or_ref_peval(val)?);
+                        }
                     }
                 }
             }
