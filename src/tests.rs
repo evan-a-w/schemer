@@ -507,6 +507,30 @@ pub fn test_simple_macro() {
     let mut prog_res = run_str(program).unwrap();
     let res = prog_res.pop().unwrap().unwrap();
     assert!(res == Ponga::Number(Number::Int(15)));
+
+    let program = "
+(let ((x 0))
+     (for i in '(1 2 3)
+         (set! x (+ x i)))
+     x)
+    ";
+    let mut prog_res = run_str(program).unwrap();
+    let res = prog_res.pop().unwrap().unwrap();
+    println!("{:?}", res);
+    assert!(res == Ponga::Number(Number::Int(6)));
+}
+
+#[test]
+pub fn test_macro_closures() {
+    let program = "
+(define count (let ((next 0)) (lambda () (let ((v next)) (begin (set! next (+ next 1)) v)))))
+(for i in '(1 2 3)
+           (count))
+(count)
+    ";
+    let mut prog_res = run_str(program).unwrap();
+    let res = prog_res.pop().unwrap().unwrap();
+    assert!(res == Ponga::Number(Number::Int(3)));
 }
 
 #[test]

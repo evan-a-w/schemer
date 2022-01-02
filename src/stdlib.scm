@@ -24,3 +24,9 @@
                   (WHILE_GO))
               '()))))
           (WHILE_GO)))
+
+(defmacro (for i in l expr)
+          (let ((i '())
+                (FOR_GO (lambda (FOR__ACC, FOR__CURR)
+                        (begin (set! i FOR__CURR) expr))))
+                (foldl FOR_GO '() l)))
