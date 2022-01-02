@@ -32,12 +32,12 @@ fn run_main() -> RunRes<()> {
         let _res = run_file(&file_name)?;
     } else {
         let mut runtime = Runtime::new();
-        let mut line = String::new();
         let stdin = io::stdin();
         let mut stdout = io::stdout();
         loop {
             print!("> ");
             stdout.flush()?;
+            let mut line = String::new();
             let read = stdin.lock().read_line(&mut line)?;
             if read == 0 {
                 break;

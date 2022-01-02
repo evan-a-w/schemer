@@ -804,12 +804,19 @@ match func {
     }
 
     pub fn run_str(&mut self, s: &str) -> RunRes<()> {
-        let parsed = pongascript_parser(s)?;
+        let parsed = match pongascript_parser(s) {
+            Ok(val) => val,
+            Err(e) => {
+                println!("{}", e);
+                return Ok(());
+            }
+        };
         if parsed.0.len() != 0 {
-            return Err(RuntimeErr::ParseError(format!(
+            println!(
                 "Unexpected tokens: {:?}",
                 parsed.0
-            )));
+            );
+            return Ok(());
         }
         let mut evald = parsed
             .1
@@ -825,10 +832,14 @@ match func {
                 res
             })
             .collect::<Vec<RunRes<Ponga>>>();
-        let last = evald.pop().unwrap()?;
-        if last != Ponga::Null {
-            println!("{}", self.ponga_to_string(&last));
-            self.bind_global("last".to_string(), last);
+        match evald.pop().unwrap() {
+            Ok(last) => {
+                if last != Ponga::Null {
+                    println!("{}", self.ponga_to_string(&last));
+                    self.bind_global("last".to_string(), last);
+                }
+            }
+            _ => (),
         }
         Ok(())
     }
