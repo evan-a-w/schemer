@@ -174,6 +174,13 @@ impl Ponga {
         }
     }
 
+    pub fn get_list_ref(&self) -> RunRes<&LinkedList<Ponga>> {
+        match self {
+            Ponga::List(list) => Ok(list),
+            _ => Err(RuntimeErr::TypeError(format!("get list: {:?} is not a list", self))),
+        }
+    }
+
     pub fn get_number(&self) -> RunRes<Number> {
         match self {
             Ponga::Number(n) => Ok(*n),
@@ -311,6 +318,13 @@ impl Ponga {
                     Ok(fre1 == ponga)
                 }
             },
+        }
+    }
+
+    pub fn char_to_char(&self) -> RunRes<char> {
+        match self {
+            Ponga::Char(c) => Ok(*c),
+            _ => Err(RuntimeErr::TypeError(format!("Expected char, received {:?}", self))),
         }
     }
 }

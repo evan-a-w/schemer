@@ -41,6 +41,8 @@ pub const FUNCS: &[(&str, fn(&mut Runtime, Vec<Ponga>) -> RunRes<Ponga>)] = &[
     ("floor", floor),
     ("ceiling", ceiling),
     ("sqrt", sqrt),
+    ("string->list", string_to_list),
+    ("list->string", list_to_string),
 ];
 
 pub fn transform_args(runtime: &mut Runtime, args: Vec<Ponga>) -> RunRes<Vec<Ponga>> {
@@ -831,5 +833,39 @@ pub fn list_to_map(runtime: &mut Runtime, mut args: Vec<Ponga>) -> RunRes<Ponga>
             }
         }
         _ => Err(RuntimeErr::TypeError(format!("list->map requires a list"))),
+    }
+}
+
+pub fn string_to_list(runtime: &mut Runtime, mut args: Vec<Ponga>) -> RunRes<Ponga> {
+    args_assert_len(&mut args, 1, "string->list")?;
+    let mut args = transform_args(runtime, args)?;
+    let s = args.pop().unwrap();
+    match s {
+        Ponga::String(s) => {
+            let mut list = LinkedList::new();
+            for c in s.chars() {
+                list.push_back(Ponga::Char(c));
+            }
+            Ok(Ponga::List(list))
+        }
+        _ => Err(RuntimeErr::TypeError(format!("string->list requires a string"))),
+    }
+}
+
+pub fn list_to_string(runtime: &mut Runtime, mut args: Vec<Ponga>) -> RunRes<Ponga> {
+    args_assert_len(&mut args, 1, "list->string")?;
+    let mut args = transform_args(runtime, args)?;
+    let s = args.pop().unwrap();
+    match s {
+        Ponga::Ref(id) => {
+            let obj = runtime.get_id_obj_ref(id)?.borrow().unwrap();
+            let chars = obj.inner().get_list_ref()?.iter();
+            let mut string = String::new();
+            for ch in chars {
+                string.push(ch.char_to_char()?);
+            }
+            Ok(Ponga::String(string))
+        }
+        _ => Err(RuntimeErr::TypeError(format!("string->list requires a string"))),
     }
 }
