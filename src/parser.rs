@@ -300,7 +300,8 @@ pub fn sexpr_parser(input: &str) -> IResult<&str, Ponga> {
 }
 
 pub fn non_delimiter(input: &str) -> IResult<&str, &str> {
-    take_while1(|c: char| !(DELIMITERS.contains(&[c]) || WHITESPACE.contains(&[c])))(input)
+    take_while1(|c: char| !(DELIMITERS.contains(|x| x == c)
+                          || WHITESPACE.contains(|x| x == c)))(input)
 }
 
 pub fn string_parser(input: &str) -> IResult<&str, Ponga> {
