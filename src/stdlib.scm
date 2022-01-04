@@ -16,17 +16,22 @@
                                 (go (+ var 1)))))))
         (go init)))
 
-(defmacro (while condi expr) 
+(defmacro (while WHILE_CONDI WHILE_EXPR) 
      (let ((WHILE_GO (open-lambda ()
-          (if condi
+          (if WHILE_CONDI
               (begin
-                  expr
+                  WHILE_EXPR
                   (WHILE_GO))
               '()))))
           (WHILE_GO)))
 
-(defmacro (for i in l expr)
-          (let ((i '())
-                (FOR_GO (open-lambda (FOR__ACC, FOR__CURR)
-                        (begin (set! i FOR__CURR) expr))))
-                (foldl FOR_GO '() l)))
+(defmacro (var VAR_ID VAR_VAL VAR_REST)
+          (let-deref ((VAR_ID VAR_VAL))
+                     VAR_REST))
+
+(defmacro (for FOR_ID in FOR_L FOR_EXPR)
+          (let-deref ((FOR_ID '()))
+                     (var FOR_GO (open-lambda (FOR__ACC, FOR__CURR)
+                                              (begin (set-deref! FOR_ID FOR__CURR)
+                                                     FOR_EXPR))
+                     (foldl FOR_GO '() FOR_L))))

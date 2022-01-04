@@ -1,13 +1,10 @@
 use crate::gc_obj::*;
-use crate::runtime::*;
 use crate::types::*;
-use std::cell::RefCell;
 use std::cell::UnsafeCell;
 use std::collections::HashMap;
 use std::collections::HashSet;
-use std::ptr::{self, NonNull};
-use std::rc::Rc;
 use std::time::{Duration, Instant};
+use std::ptr::NonNull;
 
 pub struct Gc {
     pub ptrs: HashMap<Id, GcObj>,
@@ -95,12 +92,6 @@ impl Gc {
 
     pub fn ponga_into_gc_ref(&mut self, data: Ponga) -> Ponga {
         Ponga::Ref(self.add_obj(data))
-    }
-
-    pub fn print_all_gc_ob(&self) {
-        for obj in self.ptrs.values() {
-            print!("id: {}, val: {:?}, ", obj.id, unsafe { &*obj.data.as_ptr() });
-        }
     }
 }
 

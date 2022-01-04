@@ -1,6 +1,6 @@
-use num_traits::{Num, PrimInt};
+use num_traits::Num;
 use std::cmp::{Eq, Ord, Ordering, PartialEq, PartialOrd};
-use std::ops::{Add, Div, Mul, Rem, Sub};
+use std::ops::{Add, Div, Mul, Sub};
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub struct Ratio<T: Num + Ord + Copy> {

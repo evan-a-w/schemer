@@ -11,11 +11,7 @@ pub enum Instruction {
     CollectArray(usize),
     CollectObject(Vec<String>),
     CollectList(usize),
-    CollectSexpr(usize),
     PopStack,
-    EvalFlippedStack,
-    EvalStack,
-    PushStack(Ponga),
 }
 
 impl std::fmt::Display for Instruction {
@@ -30,11 +26,7 @@ impl std::fmt::Display for Instruction {
             Instruction::CollectArray(n) => write!(f, "collect array {}", n),
             Instruction::CollectObject(names) => write!(f, "collect object {}", names.join(", ")),
             Instruction::CollectList(n) => write!(f, "collect list {}", n),
-            Instruction::CollectSexpr(n) => write!(f, "collect sexpr {}", n),
             Instruction::PopStack => write!(f, "pop stack"),
-            Instruction::EvalFlippedStack => write!(f, "eval flipped stack"),
-            Instruction::EvalStack => write!(f, "eval stack"),
-            Instruction::PushStack(ponga) => write!(f, "push stack {}", ponga),
         }
     }
 }

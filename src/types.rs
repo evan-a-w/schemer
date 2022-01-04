@@ -1,4 +1,3 @@
-use crate::ratio::*;
 use crate::number::*;
 use crate::runtime::Runtime;
 use std::collections::HashMap;
@@ -133,27 +132,6 @@ impl Ponga {
         }
     }
 
-    pub fn is_true(&self) -> bool {
-        match self {
-            Ponga::True => true,
-            _ => false,
-        }
-    }
-
-    pub fn is_false(&self) -> bool {
-        match self {
-            Ponga::False => true,
-            _ => false,
-        }
-    }
-
-    pub fn is_ref(&self) -> bool {
-        match self {
-            Ponga::Ref(_) => true,
-            _ => false,
-        }
-    }
-
     pub fn to_bool(&self) -> RunRes<bool> {
         match self {
             Ponga::True => Ok(true),
@@ -166,15 +144,6 @@ impl Ponga {
         match self {
             Ponga::Number(n) => Ok(*n),
             _ => Err(RuntimeErr::TypeError(format!("to number: {:?} is not a number", self))),
-        }
-    }
-
-    pub fn extract_id(&self) -> RunRes<Id> {
-        match self {
-            Ponga::Ref(id) => Ok(id.clone()),
-            _ => Err(RuntimeErr::TypeError(
-                "Expected a reference".to_string(),
-            )),
         }
     }
 
@@ -207,31 +176,6 @@ impl Ponga {
         }
     }
 
-    pub fn map_replace(self, name: &str, val: &Ponga) -> Ponga {
-        match self {
-            Ponga::Identifier(s) => {
-                if s == name {
-                    val.clone()
-                } else {
-                    Ponga::Identifier(s)
-                }
-            }
-            Ponga::Sexpr(arr) => {
-                Ponga::Sexpr(arr.into_iter().map(|v| v.map_replace(name, val)).collect())
-            }
-            Ponga::Array(arr) => {
-                Ponga::Array(arr.into_iter().map(|v| v.map_replace(name, val)).collect())
-            }
-            Ponga::List(l) => {
-                Ponga::List(l.into_iter().map(|v| v.map_replace(name, val)).collect())
-            }
-            Ponga::Object(obj) => {
-                Ponga::Object(obj.into_iter().map(|(k, v)| (k, v.map_replace(name, val))).collect())
-            }
-            _ => self,
-        }
-    }
-
     pub fn extract_name(self) -> RunRes<String> {
         match self {
             Ponga::Identifier(s) => Ok(s),
@@ -240,14 +184,6 @@ impl Ponga {
         }
     }
     
-    pub fn extract_name_ref(&self) -> RunRes<&String> {
-        match self {
-            Ponga::Identifier(s) => Ok(s),
-            Ponga::Symbol(s) => Ok(s),
-            _ => Err(RuntimeErr::TypeError(format!("Expected an identifier, got {:?}", self))),
-        }
-    }
-
     pub fn extract_map(self) -> Option<HashMap<String, Ponga>> {
         match self {
             Ponga::Object(obj) => Some(obj),
@@ -278,68 +214,6 @@ impl Ponga {
         }
     }
     
-    pub fn equals_alt(self, snd: Self, runtime: &Runtime) -> RunRes<bool> {
-        Ok(false)
-    }
-
-    pub fn equals(&self, snd: &Self, runtime: &Runtime) -> RunRes<bool> {
-        match self {
-            Ponga::Identifier(s1) => {
-                let fre1 = runtime.get_identifier_obj_ref(&s1)?;
-                match snd {
-                    Ponga::Identifier(s2) => {
-                        let fre2 = runtime.get_identifier_obj_ref(&s2)?;
-                        Ok(fre1 == fre2 || fre1.equals(fre2, runtime)?)
-                    }
-                    Ponga::Ref(id) => {
-                        let obj = runtime.get_id_obj_ref(*id)?;
-                        let borrowed = obj.borrow().unwrap();
-                        let fre2 = borrowed.inner();
-                        Ok(fre1 == fre2 || fre1.equals(fre2, runtime)?)
-                    }
-                    ponga => {
-                        Ok(fre1 == ponga || fre1.equals(&ponga, runtime)?)
-                    }
-                }
-            }
-            Ponga::Ref(id) => {
-                let obj1 = runtime.get_id_obj_ref(*id)?;
-                let borrowed1 = obj1.borrow().unwrap();
-                let fre1 = borrowed1.inner();
-                match snd {
-                    Ponga::Identifier(s2) => {
-                        let fre2 = runtime.get_identifier_obj_ref(&s2)?;
-                        Ok(fre1 == fre2 || fre1.equals(fre2, runtime)?)
-                    }
-                    Ponga::Ref(id) => {
-                        let obj = runtime.get_id_obj_ref(*id)?;
-                        let borrowed = obj.borrow().unwrap();
-                        let fre2 = borrowed.inner();
-                        Ok(fre1 == fre2 || fre1.equals(fre2, runtime)?)
-                    }
-                    ponga => {
-                        Ok(fre1 == ponga || fre1.equals(&ponga, runtime)?)
-                    }
-                }
-            }
-            fre1 => match snd {
-                Ponga::Identifier(s2) => {
-                    let fre2 = runtime.get_identifier_obj_ref(&s2)?;
-                    Ok(fre1 == fre2 || fre1.equals(fre2, runtime)?)
-                }
-                Ponga::Ref(id) => {
-                    let obj = runtime.get_id_obj_ref(*id)?;
-                    let borrowed = obj.borrow().unwrap();
-                    let fre2 = borrowed.inner();
-                    Ok(fre1 == fre2 || fre1.equals(fre2, runtime)?)
-                }
-                ponga => {
-                    Ok(fre1 == ponga)
-                }
-            },
-        }
-    }
-
     pub fn char_to_char(&self) -> RunRes<char> {
         match self {
             Ponga::Char(c) => Ok(*c),
@@ -410,10 +284,8 @@ impl std::error::Error for RuntimeErr {}
 
 pub type RunRes<T> = Result<T, RuntimeErr>;
 
-use nom::error::{self, ErrorKind};
-
 impl<E> std::convert::From<nom::Err<E>> for RuntimeErr {
-    fn from(e: nom::Err<E>) -> Self {
+    fn from(_: nom::Err<E>) -> Self {
         RuntimeErr::ParseError("Failed to parse".to_string())
     }
 }

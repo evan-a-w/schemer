@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 mod gc;
 mod gc_obj;
 mod parser;
@@ -10,16 +12,8 @@ mod number;
 mod instructions;
 
 use types::*;
-use parser::*;
-use number::*;
-use gc::*;
-use gc_obj::*;
 use runtime::*;
 use std::io::{self, BufRead, Write};
-
-fn run_tests_in_main() {
-    tests::test_basic_garbage_collection_manual_binding();
-}
 
 fn run_main() -> RunRes<()> {
     let mut args = std::env::args();
