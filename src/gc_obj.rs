@@ -1,9 +1,8 @@
 use crate::types::*;
-use crate::number::*;
 use std::cell::UnsafeCell;
 use std::ops::Deref;
 use std::ops::DerefMut;
-use std::ptr::{self, NonNull};
+use std::ptr::NonNull;
 
 #[derive(Clone, Copy, Debug)]
 pub enum MarkerFlag {
@@ -164,10 +163,6 @@ impl GcObj {
         }
     }
 
-    pub fn to_number_ponga(&self) -> RunRes<Number> {
-        self.borrow().unwrap().to_number()
-    }
-
     pub fn borrow_mut<'a>(&'a mut self) -> Option<GcRefMut<'a>> {
         unsafe {
             let flags = &mut *self.flags.get();
@@ -195,13 +190,6 @@ impl GcObj {
         }
     }
 
-    pub fn get_taken(&self) -> TakenFlag {
-        unsafe {
-            let flags = &*self.flags.get();
-            flags.taken
-        }
-    }
-
     pub fn free(&mut self) {
         unsafe {
             Box::from_raw(self.data.as_ptr());
@@ -213,7 +201,7 @@ impl Drop for GcObj {
     fn drop(&mut self) {
         if self.get_flags().to_free {
             unsafe {
-                *Box::from_raw(self.data.as_ptr());
+                let _ = *Box::from_raw(self.data.as_ptr());
             }
         }
     }

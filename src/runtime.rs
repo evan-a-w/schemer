@@ -9,7 +9,6 @@ use std::collections::HashMap;
 use std::collections::LinkedList;
 use std::fs::File;
 use std::io::prelude::*;
-use std::ptr::{self, NonNull};
 
 pub const MAX_STACK_SIZE: usize = 100_000;
 
@@ -267,23 +266,8 @@ impl Runtime {
                 )));
             }
             match ins_stack.pop().unwrap() {
-                Instruction::PushStack(pong) => {
-                    data_stack.push(pong);
-                }
                 Instruction::PopStack => {
                     data_stack.pop();
-                }
-                Instruction::EvalFlippedStack => {
-                    let stack_val = data_stack.pop().ok_or(
-                        RuntimeErr::Other(format!("Expected value on data stack"))
-                    )?.flip_code_vals(&self);
-                    ins_stack.push(Instruction::Eval(stack_val));
-                }
-                Instruction::EvalStack => {
-                    let stack_val = data_stack.pop().ok_or(
-                        RuntimeErr::Other(format!("Expected value on data stack"))
-                    )?;
-                    ins_stack.push(Instruction::Eval(stack_val));
                 }
                 Instruction::Define(s) => {
                     self.bind_global(s, pop_or(&mut data_stack)?);
@@ -330,13 +314,6 @@ impl Runtime {
                         res.insert(name, pop_or(&mut data_stack)?);
                     }
                     data_stack.push(self.gc.ponga_into_gc_ref(Ponga::Object(res)));
-                }
-                Instruction::CollectSexpr(n) => {
-                    let mut res = Vec::new();
-                    for _ in 0..n {
-                        res.push(pop_or(&mut data_stack)?);
-                    }
-                    data_stack.push(Ponga::Sexpr(res));
                 }
                 Instruction::Call(num_args) => {
                     let mut args = Vec::new();
@@ -979,13 +956,13 @@ match func {
 
     pub fn ponga_to_string(&self, ponga: &Ponga) -> String {
         match ponga {
-            Ponga::Number(n) => format!("{}", ponga),
-            Ponga::String(s) => format!("{}", ponga),
+            Ponga::Number(_) => format!("{}", ponga),
+            Ponga::String(_) => format!("{}", ponga),
             Ponga::False => format!("{}", ponga),
             Ponga::True => format!("{}", ponga),
-            Ponga::Char(c) => format!("{}", ponga),
+            Ponga::Char(_) => format!("{}", ponga),
             Ponga::Null => format!("{}", ponga),
-            Ponga::Symbol(s) => format!("'{}", ponga),
+            Ponga::Symbol(_) => format!("'{}", ponga),
             Ponga::HFunc(id) => format!("{}", FUNCS[*id].0),
             Ponga::CFunc(args, _, stateid) => {
                 let obj = self.get_id_obj_ref(*stateid).unwrap();
@@ -1030,13 +1007,13 @@ match func {
 
     pub fn ponga_to_string_no_id(&self, ponga: &Ponga) -> String {
         match ponga {
-            Ponga::Number(n) => format!("{}", ponga),
-            Ponga::String(s) => format!("{}", ponga),
+            Ponga::Number(_) => format!("{}", ponga),
+            Ponga::String(_) => format!("{}", ponga),
             Ponga::False => format!("{}", ponga),
             Ponga::True => format!("{}", ponga),
-            Ponga::Char(c) => format!("{}", ponga),
+            Ponga::Char(_) => format!("{}", ponga),
             Ponga::Null => format!("{}", ponga),
-            Ponga::Symbol(s) => format!("'{}", ponga),
+            Ponga::Symbol(_) => format!("'{}", ponga),
             Ponga::HFunc(id) => format!("{}", FUNCS[*id].0),
             Ponga::CFunc(args, _, stateid) => {
                 let obj = self.get_id_obj_ref(*stateid).unwrap();

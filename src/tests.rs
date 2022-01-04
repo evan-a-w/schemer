@@ -1,11 +1,9 @@
-use crate::gc::*;
-use crate::gc_obj::*;
-use crate::parser::*;
 use crate::runtime::*;
 use crate::types::*;
 use crate::number::*;
 use std::collections::HashMap;
-use std::collections::LinkedList;
+#[allow(unused_imports)]
+use crate::parser::*;
 
 // Also need to test with valgrind or w/e so this is a standalone function
 // (can be called in main)
@@ -164,6 +162,7 @@ pub fn test_array_parser() {
 
 #[test]
 pub fn test_list_parser() {
+    use std::collections::LinkedList;
     use crate::number::Number::{Float, Int};
     use Ponga::*;
     let res = ponga_parser("'(1   2.0  \"hi\"  )");

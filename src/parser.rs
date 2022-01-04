@@ -5,13 +5,11 @@ use nom::branch::alt;
 use nom::bytes::complete::{tag, take, take_while1, is_not, take_while_m_n};
 use nom::character::complete::{char, multispace0, multispace1, one_of};
 use nom::combinator::{complete, map, map_opt, map_res, not, opt, recognize, value, verify};
-use nom::error::{self, ErrorKind};
 use nom::error::{FromExternalError, ParseError};
-use nom::multi::{fill, fold_many0, many0, many1};
-use nom::multi::{separated_list0, separated_list1};
+use nom::multi::{fold_many0, many0, many1};
+use nom::multi::separated_list0;
 use nom::sequence::{delimited, pair, preceded, terminated, tuple};
 use nom::IResult;
-use std::collections::{HashMap, LinkedList};
 
 const DELIMITERS: &str = r#"();"'`|[]{}"#;
 const WHITESPACE: &str = " \t\n\r";

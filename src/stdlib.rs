@@ -371,9 +371,9 @@ pub fn peq(runtime: &mut Runtime, mut args: Vec<Ponga>) -> RunRes<Ponga> {
     }
 }
 
-pub fn or(runtime: &mut Runtime, mut args: Vec<Ponga>) -> RunRes<Ponga> {
+pub fn or(runtime: &mut Runtime, args: Vec<Ponga>) -> RunRes<Ponga> {
     args_assert_gt(&args, 0, "or")?;
-    let mut args = transform_args(runtime, args)?;
+    let args = transform_args(runtime, args)?;
     for i in args.into_iter() {
         if i != Ponga::False {
             return Ok(i);
@@ -382,9 +382,9 @@ pub fn or(runtime: &mut Runtime, mut args: Vec<Ponga>) -> RunRes<Ponga> {
     Ok(Ponga::False)
 }
 
-pub fn and(runtime: &mut Runtime, mut args: Vec<Ponga>) -> RunRes<Ponga> {
+pub fn and(runtime: &mut Runtime, args: Vec<Ponga>) -> RunRes<Ponga> {
     args_assert_gt(&args, 0, "and")?;
-    let mut args = transform_args(runtime, args)?;
+    let args = transform_args(runtime, args)?;
     let len = args.len();
     for (i, v) in args.into_iter().enumerate() {
         if v == Ponga::False {
@@ -444,7 +444,7 @@ pub fn modulus(runtime: &mut Runtime, mut args: Vec<Ponga>) -> RunRes<Ponga> {
     Ok(Ponga::Number(fst.modulus(snd)))
 }
 
-pub fn cond(runtime: &mut Runtime, mut args: Vec<Ponga>) -> RunRes<Ponga> {
+pub fn cond(runtime: &mut Runtime, args: Vec<Ponga>) -> RunRes<Ponga> {
     args_assert_gt(&args, 1, "cond")?;
     for arg in args.into_iter() {
         match arg {
@@ -480,7 +480,7 @@ pub fn cond(runtime: &mut Runtime, mut args: Vec<Ponga>) -> RunRes<Ponga> {
     Ok(Ponga::Null)
 }
 
-pub fn disp(runtime: &mut Runtime, mut args: Vec<Ponga>) -> RunRes<Ponga> {
+pub fn disp(runtime: &mut Runtime, args: Vec<Ponga>) -> RunRes<Ponga> {
     args_assert_len(&args, 1, "display")?;
     let mut args = transform_args(runtime, args)?;
     let arg = runtime.eval(args.pop().unwrap())?;
@@ -541,7 +541,7 @@ pub fn foldl(runtime: &mut Runtime, mut args: Vec<Ponga>) -> RunRes<Ponga> {
                     let cloned: HashMap<String, Ponga> = o.clone();
                     drop(o);
                     drop(obj);
-                    for (k, v) in cloned.into_iter() {
+                    for (_, v) in cloned.into_iter() {
                         let sexpr = Ponga::Sexpr(vec![func.clone(), acc, v]);
                         acc = runtime.eval(sexpr)?;
                     }
@@ -605,7 +605,7 @@ pub fn foldr(runtime: &mut Runtime, mut args: Vec<Ponga>) -> RunRes<Ponga> {
                     let cloned: HashMap<String, Ponga> = o.clone();
                     drop(o);
                     drop(obj);
-                    for (k, v) in cloned.into_iter() {
+                    for (_, v) in cloned.into_iter() {
                         let sexpr = Ponga::Sexpr(vec![func.clone(), v, acc]);
                         acc = runtime.eval(sexpr)?;
                     }
@@ -618,7 +618,7 @@ pub fn foldr(runtime: &mut Runtime, mut args: Vec<Ponga>) -> RunRes<Ponga> {
     }
 }
 
-pub fn vector_len(runtime: &mut Runtime, mut args: Vec<Ponga>) -> RunRes<Ponga> {
+pub fn vector_len(runtime: &mut Runtime, args: Vec<Ponga>) -> RunRes<Ponga> {
     args_assert_len(&args, 1, "vector-length")?;
     let mut args = transform_args(runtime, args)?;
     let arg = args.pop().unwrap();
@@ -635,7 +635,7 @@ pub fn vector_len(runtime: &mut Runtime, mut args: Vec<Ponga>) -> RunRes<Ponga> 
     }
 }
 
-pub fn vector_ref(runtime: &mut Runtime, mut args: Vec<Ponga>) -> RunRes<Ponga> {
+pub fn vector_ref(runtime: &mut Runtime, args: Vec<Ponga>) -> RunRes<Ponga> {
     args_assert_len(&args, 2, "vector-length")?;
     let mut args = transform_args(runtime, args)?;
     let n = args.pop().unwrap();
@@ -664,7 +664,7 @@ pub fn vector_ref(runtime: &mut Runtime, mut args: Vec<Ponga>) -> RunRes<Ponga> 
     }
 }
 
-pub fn vector_append(runtime: &mut Runtime, mut args: Vec<Ponga>) -> RunRes<Ponga> {
+pub fn vector_append(runtime: &mut Runtime, args: Vec<Ponga>) -> RunRes<Ponga> {
     args_assert_len(&args, 2, "vector-append!")?;
     let mut args = transform_args(runtime, args)?;
     // println!("APPEND: {:?}", args);
@@ -704,7 +704,7 @@ pub fn ceiling(runtime: &mut Runtime, mut args: Vec<Ponga>) -> RunRes<Ponga> {
     let fst = args.pop().unwrap();
     match fst {
         Ponga::Number(n) => {
-            Ok(Ponga::Number(n.floor()))
+            Ok(Ponga::Number(n.ceiling()))
         }
         _ => Err(RuntimeErr::TypeError(format!("ceiling requires a number"))),
     }
@@ -722,7 +722,7 @@ pub fn sqrt(runtime: &mut Runtime, mut args: Vec<Ponga>) -> RunRes<Ponga> {
     }
 }
 
-pub fn map_ref(runtime: &mut Runtime, mut args: Vec<Ponga>) -> RunRes<Ponga> {
+pub fn map_ref(runtime: &mut Runtime, args: Vec<Ponga>) -> RunRes<Ponga> {
     args_assert_len(&args, 2, "map-ref")?;
     let mut args = transform_args(runtime, args)?;
     let n = args.pop().unwrap();
@@ -744,7 +744,7 @@ pub fn map_ref(runtime: &mut Runtime, mut args: Vec<Ponga>) -> RunRes<Ponga> {
     }
 }
 
-pub fn map_set(runtime: &mut Runtime, mut args: Vec<Ponga>) -> RunRes<Ponga> {
+pub fn map_set(runtime: &mut Runtime, args: Vec<Ponga>) -> RunRes<Ponga> {
     args_assert_len(&args, 3, "map-set!")?;
     let mut args = transform_args(runtime, args)?;
     let val = args.pop().unwrap();
@@ -767,7 +767,7 @@ pub fn map_set(runtime: &mut Runtime, mut args: Vec<Ponga>) -> RunRes<Ponga> {
     }
 }
 
-pub fn map_contains(runtime: &mut Runtime, mut args: Vec<Ponga>) -> RunRes<Ponga> {
+pub fn map_contains(runtime: &mut Runtime, args: Vec<Ponga>) -> RunRes<Ponga> {
     args_assert_len(&args, 2, "map-contains?")?;
     let mut args = transform_args(runtime, args)?;
     let n = args.pop().unwrap();
