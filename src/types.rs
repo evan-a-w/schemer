@@ -347,12 +347,38 @@ impl Ponga {
         }
     }
 
-    pub fn flip_code_vals(self) -> Ponga {
+    pub fn flip_code_vals(self, runtime: &Runtime) -> Ponga {
         match self {
-            Ponga::List(l) => Ponga::Sexpr(l.into_iter().map(|v| v.flip_code_vals()).collect()),
-            Ponga::Sexpr(p) => Ponga::List(p.into_iter().map(|v| v.flip_code_vals()).collect()),
+            Ponga::List(l) => Ponga::Sexpr(l.into_iter()
+                                            .map(|v| v.flip_code_vals(runtime)
+                                          ).collect()),
+            Ponga::Sexpr(p) => Ponga::List(p.into_iter()
+                                            .map(|v| v.flip_code_vals(runtime)
+                                          ).collect()),
             Ponga::Symbol(s) => Ponga::Identifier(s),
             Ponga::Identifier(s) => Ponga::Symbol(s),
+            Ponga::Ref(id) => {
+                let obj = runtime.get_id_obj_ref(id).unwrap();
+                let cloned = obj.borrow().unwrap().clone();
+                cloned.flip_code_vals(runtime)
+            }
+            _ => self,
+        }
+    }
+
+    pub fn deep_copy(self, runtime: &Runtime) -> Ponga {
+        match self {
+            Ponga::Identifier(s) => {
+                let r = match runtime.get_identifier_obj_ref(&s) {
+                    Ok(v) => v,
+                    Err(_) => return Ponga::Identifier(s),
+                };
+                r.clone()
+            }
+            Ponga::Ref(id) => {
+                let obj = runtime.get_id_obj_ref(id).unwrap();
+                obj.borrow().unwrap().clone()
+            }
             _ => self,
         }
     }
