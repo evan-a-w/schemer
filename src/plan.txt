@@ -1,7 +1,6 @@
 preprocess:
 
 (defmacro (name arg1 arg2 ...)
-[list of symbols and such]
-)
-
-arg1 is first thing in s-expr, arg2 is 2nd, arg_n is rest
+    (let ((x lambda (y) (+ y 1)))
+        '('car arg1)
+        arg2))

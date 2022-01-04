@@ -255,6 +255,12 @@ impl Runtime {
         let mut data_stack = vec![];
         let mut ins_stack = vec![Instruction::Eval(pong)];
         loop {
+            //println!("{}", ins_stack[ins_stack.len() - 1]);
+            // if data_stack.len() != 0 {
+            //     println!("Data top: {}", self.ponga_to_string_no_id(
+            //         &data_stack[data_stack.len() - 1]
+            //     ));
+            // }
             if ins_stack.len() > MAX_STACK_SIZE {
                 return Err(RuntimeErr::Other(format!(
                     "Stack size exceeded max of {}", MAX_STACK_SIZE
@@ -266,6 +272,18 @@ impl Runtime {
                 }
                 Instruction::PopStack => {
                     data_stack.pop();
+                }
+                Instruction::EvalFlippedStack => {
+                    let stack_val = data_stack.pop().ok_or(
+                        RuntimeErr::Other(format!("Expected value on data stack"))
+                    )?.flip_code_vals(&self);
+                    ins_stack.push(Instruction::Eval(stack_val));
+                }
+                Instruction::EvalStack => {
+                    let stack_val = data_stack.pop().ok_or(
+                        RuntimeErr::Other(format!("Expected value on data stack"))
+                    )?;
+                    ins_stack.push(Instruction::Eval(stack_val));
                 }
                 Instruction::Define(s) => {
                     self.bind_global(s, pop_or(&mut data_stack)?);
@@ -391,8 +409,8 @@ impl Runtime {
                             // Push S-Expr to be evaluated
                             let sexpr_obj = self.get_id_obj_ref(sexpr_id)?;
                             let sexpr = sexpr_obj.borrow().unwrap().clone();
-                            let flipped = sexpr.flip_code_vals();
-                            ins_stack.push(Instruction::Eval(flipped));
+
+                            ins_stack.push(Instruction::Eval(sexpr));
                         }
                         o => return Err(RuntimeErr::TypeError(
                             format!("Expected function, received {:?}!", o)
@@ -434,8 +452,10 @@ match func {
                 ));
             }
             // Can make this better if we push it later but should be fine for now
+            //println!("iter: {:?}", iter);
             let cond = self.id_or_ref_peval(iter.next().unwrap())?;
             let cond = self.eval(cond)?;
+            //println!("cond: {}", cond);
             let val = if cond != Ponga::False {
                 iter.nth(0).unwrap()
             } else {
@@ -451,8 +471,32 @@ match func {
                 ));
             }
             let val = iter.next().unwrap();
-            ins_stack.push(Instruction::Eval(val.flip_code_vals()));
+            data_stack.push(val.flip_code_vals(&self));
             continue;
+        }
+        "$FLIP-EVAL" => {
+            if iter.len() != 1 {
+                return Err(RuntimeErr::Other(
+                    "$FLIP-EVAL must have one argument".to_string()
+                ));
+            }
+            let val = iter.next().unwrap();
+            ins_stack.push(Instruction::Eval(val.flip_code_vals(&self)));
+            continue;
+        }
+        "quote" => {
+            if iter.len() != 1 {
+                return Err(RuntimeErr::Other(
+                    "quote must have one argument".to_string()
+                ));
+            }
+            let val = iter.next().unwrap().deep_copy(&self);
+            let val = match val {
+                Ponga::Sexpr(arr) => Ponga::List(arr.into_iter().collect()),
+                Ponga::Identifier(s) => Ponga::Symbol(s),
+                val => val,
+            };
+            data_stack.push(val);
         }
         "$DELAY" => {
             for i in iter {
@@ -549,7 +593,7 @@ match func {
                 ));
             }
             let first = iter.next().unwrap();
-            let body = iter.next().unwrap().flip_code_vals();
+            let body = iter.next().unwrap();
 
             let mut cargs = Vec::new();
             if !first.is_sexpr() {
@@ -745,7 +789,8 @@ match func {
                 data_stack.push(ref_obj.clone());
                 if ref_obj.is_macro() {
                     for arg in iter {
-                        data_stack.push(arg);
+                        let val = arg.deep_copy(&self);
+                        data_stack.push(val);
                     }
                 } else {
                     // Call this func with the rest of thingies as args
@@ -774,7 +819,8 @@ match func {
         let n_args = iter.len();
         ins_stack.push(Instruction::Call(n_args));
         for arg in iter {
-            ins_stack.push(Instruction::PushStack(arg.flip_code_vals()));
+            let val = arg.deep_copy(&self);
+            data_stack.push(val);
         }
         data_stack.push(mfunc);
         continue;
