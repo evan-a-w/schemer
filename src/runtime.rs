@@ -441,23 +441,77 @@ match func {
             ins_stack.push(Instruction::Eval(val));
             continue;
         }
-        "$FLIP" => {
+        "$PRINT_RAW" => {
+            if iter.len() != 1 {
+                return Err(RuntimeErr::Other(
+                    "$PRINT_RAW must have one argument".to_string()
+                ));
+            }
+            println!("{}", iter.next().unwrap().deep_copy(&self));
+            data_stack.push(Ponga::Null);
+            continue;
+        }
+        "copy" => {
+            if iter.len() != 1 {
+                return Err(RuntimeErr::Other(
+                    "copy must have one argument".to_string()
+                ));
+            }
+            let val = iter.next().unwrap().deep_copy(&self);
+            data_stack.push(val);
+            continue;
+        }
+        "$EVAL" | "eval" => {
+            if iter.len() != 1 {
+                return Err(RuntimeErr::Other(
+                    "$EVAL must have one argument".to_string()
+                ));
+            }
+            let val = iter.next().unwrap().deep_copy(&self);
+            ins_stack.push(Instruction::Eval(val));
+            continue;
+        }
+        "$FLIP"
+        | "code<->data"
+        | "data<->code" => {
             if iter.len() != 1 {
                 return Err(RuntimeErr::Other(
                     "$FLIP must have one argument".to_string()
                 ));
             }
-            let val = iter.next().unwrap();
+            let val = match iter.next().unwrap() {
+                Ponga::Identifier(s) => {
+                    match self.get_identifier_obj_ref(&s) {
+                        Ok(o) => o.clone(),
+                        Err(_) => Ponga::Identifier(s),
+                    }
+                }
+                val => val,
+            };
             data_stack.push(val.flip_code_vals(&self));
             continue;
         }
-        "$FLIP-EVAL" => {
+        "$FLIP-EVAL"
+        | "code<->data.eval"
+        | "data<->code.eval" => {
             if iter.len() != 1 {
                 return Err(RuntimeErr::Other(
                     "$FLIP-EVAL must have one argument".to_string()
                 ));
             }
             let val = iter.next().unwrap();
+            ins_stack.push(Instruction::Eval(val.flip_code_vals(&self)));
+            continue;
+        }
+        "$EVAL-FLIP-EVAL"
+        | "eval.code<->data.eval"
+        | "eval.data<->code.eval" => {
+            if iter.len() != 1 {
+                return Err(RuntimeErr::Other(
+                    "eval.code<->list.eval must have one argument".to_string()
+                ));
+            }
+            let val = self.eval(iter.next().unwrap())?;
             ins_stack.push(Instruction::Eval(val.flip_code_vals(&self)));
             continue;
         }
@@ -611,6 +665,95 @@ match func {
             }
             continue;
         }
+        "deref" => {
+            if iter.len() != 1 {
+                return Err(RuntimeErr::Other(
+                    "deref must have one argument".to_string()
+                ));
+            }
+            let val = iter.next().unwrap();
+            let deref = match val {
+                Ponga::Identifier(name) => {
+                    let r = self.get_identifier_obj_ref(&name)?; 
+                    if !r.is_identifier() {
+                        Err(RuntimeErr::Other(format!(
+                            "identifier in deref must refer to an identifier (not {:?})", r
+                        )))
+                    } else {
+                        Ok(r.clone())
+                    }
+                }
+                _ => Err(RuntimeErr::Other(format!(
+                    "deref requires an identifier as argument"
+                ))),
+            }?;
+            data_stack.push(deref);
+            continue;
+        }
+        "let-deref" => {
+            if iter.len() < 2 {
+                return Err(RuntimeErr::Other(
+                    "let must have at least two arguments".to_string()
+                ));
+            }
+            let first = iter.next().unwrap();
+            let mut body = vec![Ponga::Identifier("begin".to_string())];
+            for arg in iter {
+                body.push(arg);
+            }
+            let body = Ponga::Sexpr(body);
+
+            if !first.is_sexpr() {
+                return Err(RuntimeErr::Other(
+                    "first argument to let must be an s-expr with identifiers"
+                        .to_string()
+                ));
+            }
+            
+            let v = first.get_array()?;
+            let mut names = Vec::new();
+            for pair in v.into_iter().rev() {
+                if !pair.is_sexpr() {
+                    return Err(RuntimeErr::Other(
+                        "each pair in let-deref must be S-Expr".to_string()
+                    ));
+                }
+                let inner_arr = pair.get_array()?;
+                if inner_arr.len() != 2 {
+                    return Err(RuntimeErr::Other(
+                        "let-deref requires pairs of S-Exprs".to_string()
+                    ));
+                }
+                let mut inner_iter = inner_arr.into_iter();
+                let id = match inner_iter.next().unwrap() {
+                    Ponga::Identifier(name) => {
+                        let r = self.get_identifier_obj_ref(&name)?; 
+                        if !r.is_identifier() {
+                            Err(RuntimeErr::Other(format!(
+                                "identifiers in let-deref must refer to identifiers (not {:?})", r
+                            )))
+                        } else {
+                            r.clone().extract_name()
+                        }
+                    }
+                    _ => Err(RuntimeErr::Other(format!(
+                        "let-deref requires identifiers as first element of each pair"
+                    ))),
+                }?;
+                let val = inner_iter.next().unwrap();
+
+                names.push((id.clone(), val));
+                ins_stack.push(Instruction::Pop(id, None));
+
+            }
+            ins_stack.push(Instruction::Eval(body));
+
+            for (name, val) in names {
+                ins_stack.push(Instruction::Push(name));
+                ins_stack.push(Instruction::Eval(val));
+            }
+
+        }
         "let" => {
             if iter.len() < 2 {
                 return Err(RuntimeErr::Other(
@@ -755,6 +898,33 @@ match func {
             }
 
             ins_stack.push(Instruction::Set(name.extract_name()?));
+            ins_stack.push(Instruction::Eval(val));
+            continue;
+        }
+        "set-deref!" => {
+            if iter.len() != 2 {
+                return Err(RuntimeErr::Other(
+                    "set! must have two arguments".to_string()
+                ));
+            }
+            let name = match iter.next().unwrap() {
+                Ponga::Identifier(name) => {
+                    let r = self.get_identifier_obj_ref(&name)?; 
+                    if !r.is_identifier() {
+                        Err(RuntimeErr::Other(format!(
+                            "identifier in set-deref! must refer to an identifier (not {:?})", r
+                        )))
+                    } else {
+                        r.clone().extract_name()
+                    }
+                }
+                _ => Err(RuntimeErr::Other(format!(
+                    "set-deref! requires an identifier as argument"
+                ))),
+            }?;
+            let val = iter.next().unwrap();
+
+            ins_stack.push(Instruction::Set(name));
             ins_stack.push(Instruction::Eval(val));
             continue;
         }
