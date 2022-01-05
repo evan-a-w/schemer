@@ -35,3 +35,8 @@
                                               (begin (set-deref! FOR_ID FOR__CURR)
                                                      FOR_EXPR))
                      (foldl FOR_GO '() FOR_L))))
+
+(define (apply-while condi iter init)
+        (if (condi init)
+            (apply-while condi iter (iter init))
+            init))
