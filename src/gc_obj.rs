@@ -2,6 +2,7 @@ use crate::types::*;
 use std::cell::UnsafeCell;
 use std::ops::Deref;
 use std::ops::DerefMut;
+use crate::gc::Trace;
 use std::ptr::NonNull;
 
 #[derive(Clone, Copy, Debug)]
@@ -26,79 +27,97 @@ pub struct Flags {
 }
 
 #[derive(Debug)]
-pub struct GcObj {
-    pub data: NonNull<Ponga>,
+pub struct GcObj<T: Trace<T>> {
+    pub data: UnsafeCell<NonNull<T>>,
     pub id: Id,
     pub flags: UnsafeCell<Flags>,
 }
 
-impl Clone for GcObj {
+impl<T: Trace<T>> Clone for GcObj<T> {
     fn clone(&self) -> Self {
         GcObj {
-            data: self.data,
+            data: unsafe {
+                UnsafeCell::new(NonNull::new_unchecked(
+                    self.data.get().as_ref().unwrap().as_ptr()
+                ))
+            },
             id: self.id,
             flags: UnsafeCell::new(self.get_flags()),
         }
     }
 }
 
-pub struct GcRef<'a> {
-    inner: &'a Ponga,
-    gc_obj: &'a GcObj,
+pub struct GcRef<'a, T: Trace<T>> {
+    gc_obj: &'a GcObj<T>,
 }
 
-pub struct GcRefMut<'a> {
-    inner: &'a mut Ponga,
-    gc_obj: &'a mut GcObj,
+pub struct GcRefMut<'a, T: Trace<T>> {
+    gc_obj: &'a GcObj<T>,
 }
 
-impl<'a> GcRefMut<'a> {
-    pub fn inner(&mut self) -> &mut Ponga {
-        self.inner
+impl<'a, T: Trace<T>> GcRefMut<'a, T> {
+    pub fn inner(&mut self) -> &mut T {
+        unsafe { self.gc_obj.data.get().as_mut().unwrap().as_mut() }
     }
 }
 
-impl<'a> GcRef<'a> {
-    pub fn inner(&self) -> &Ponga {
-        self.inner
+impl<'a, T: Trace<T>> GcRef<'a, T> {
+    pub fn inner(&self) -> &T {
+        unsafe { self.gc_obj.data.get().as_ref().unwrap().as_ref() }
     }
 }
 
-impl<'a> Drop for GcRef<'a> {
+impl<'a, T: Trace<T>> Drop for GcRef<'a, T> {
     fn drop(&mut self) {
         self.gc_obj.remove_shared();
     }
 }
 
-impl<'a> Drop for GcRefMut<'a> {
+impl<'a, T: Trace<T>> Drop for GcRefMut<'a, T> {
     fn drop(&mut self) {
-        self.gc_obj.flags.get_mut().taken = TakenFlag::NotTaken;
+        unsafe {
+            self.gc_obj.flags.get().as_mut().unwrap().taken = TakenFlag::NotTaken;
+        }
     }
 }
 
-impl Deref for GcRef<'_> {
-    type Target = Ponga;
+impl<T: Trace<T>> Deref for GcRef<'_, T> {
+    type Target = T;
 
     fn deref(&self) -> &Self::Target {
-        self.inner
+        unsafe { self.gc_obj.data.get().as_ref().unwrap().as_ref() }
     }
 }
 
-impl Deref for GcRefMut<'_> {
-    type Target = Ponga;
+impl<T: Trace<T>> Deref for GcObj<T> {
+    type Target = T;
 
     fn deref(&self) -> &Self::Target {
-        self.inner
+        unsafe { self.data.get().as_ref().unwrap().as_ref() }
     }
 }
 
-impl DerefMut for GcRefMut<'_> {
+impl<T: Trace<T>> DerefMut for GcObj<T> {
     fn deref_mut(&mut self) -> &mut Self::Target {
-        self.inner
+        unsafe { self.data.get().as_mut().unwrap().as_mut() }
     }
 }
 
-impl GcObj {
+impl<T: Trace<T>> Deref for GcRefMut<'_, T> {
+    type Target = T;
+
+    fn deref(&self) -> &Self::Target {
+        unsafe { self.gc_obj.data.get().as_ref().unwrap().as_ref() }
+    }
+}
+
+impl<T: Trace<T>> DerefMut for GcRefMut<'_, T> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        unsafe { self.gc_obj.data.get().as_mut().unwrap().as_mut() }
+    }
+}
+
+impl<T: Trace<T>> GcObj<T> {
     fn add_shared(&self) {
         unsafe {
             let flags = &mut *self.flags.get();
@@ -147,7 +166,7 @@ impl GcObj {
         }
     }
 
-    pub fn borrow<'a>(&'a self) -> Option<GcRef<'a>> {
+    pub fn borrow<'a>(&'a self) -> Option<GcRef<'a, T>> {
         unsafe {
             let flags = &mut *self.flags.get();
             match flags.taken {
@@ -155,7 +174,6 @@ impl GcObj {
                 _ => {
                     self.add_shared();
                     Some(GcRef {
-                        inner: &*self.data.as_ptr(),
                         gc_obj: self,
                     })
                 }
@@ -163,15 +181,14 @@ impl GcObj {
         }
     }
 
-    pub fn borrow_mut<'a>(&'a mut self) -> Option<GcRefMut<'a>> {
+    pub fn borrow_mut<'a>(&'a self) -> Option<GcRefMut<'a, T>> {
         unsafe {
             let flags = &mut *self.flags.get();
             match flags.taken {
                 TakenFlag::NotTaken => {
                     flags.taken = TakenFlag::Unique;
                     Some(GcRefMut {
-                        inner: &mut *self.data.as_ptr(),
-                        gc_obj: self,
+                        gc_obj: &*(self as *const GcObj<T>),
                     })
                 }
                 _ => None,
@@ -192,16 +209,16 @@ impl GcObj {
 
     pub fn free(&mut self) {
         unsafe {
-            Box::from_raw(self.data.as_ptr());
+            let _ = *Box::from_raw(self.data.get().as_ref().unwrap().as_ptr());
         }
     }
 }
 
-impl Drop for GcObj {
+impl<T: Trace<T>> Drop for GcObj<T> {
     fn drop(&mut self) {
         if self.get_flags().to_free {
             unsafe {
-                let _ = *Box::from_raw(self.data.as_ptr());
+                let _ = *Box::from_raw(self.data.get().as_ref().unwrap().as_ptr());
             }
         }
     }

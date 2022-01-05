@@ -10,6 +10,7 @@ mod tests;
 mod types;
 mod number;
 mod instructions;
+mod env;
 
 use types::*;
 use runtime::*;

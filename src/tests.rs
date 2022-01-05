@@ -5,38 +5,6 @@ use std::collections::HashMap;
 #[allow(unused_imports)]
 use crate::parser::*;
 
-// Also need to test with valgrind or w/e so this is a standalone function
-// (can be called in main)
-pub fn test_basic_garbage_collection_manual_binding() {
-    let mut runtime = Runtime::new();
-    let id1 = runtime.gc.add_obj(Ponga::Null);
-    let id2 = runtime.gc.add_obj(Ponga::Array(vec![
-        Ponga::Number(Number::Float(1.5)),
-        Ponga::Object(HashMap::new()),
-    ]));
-
-    runtime.bind_global("hi".to_string(), Ponga::Ref(id1));
-    runtime.bind_global("bye".to_string(), Ponga::Ref(id2));
-    runtime.collect_garbage();
-
-    assert!(runtime.gc.ptrs.len() == 2);
-
-    runtime.unbind_global("hi");
-    runtime.collect_garbage();
-
-    assert!(runtime.gc.ptrs.len() == 1);
-
-    runtime.unbind_global("bye");
-    runtime.collect_garbage();
-
-    assert!(runtime.gc.ptrs.len() == 0);
-}
-
-#[test]
-pub fn test_gc_1() {
-    test_basic_garbage_collection_manual_binding();
-}
-
 #[test]
 pub fn test_int_parse() {
     let res = int_parser("123");

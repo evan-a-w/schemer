@@ -6,19 +6,17 @@ use std::collections::HashSet;
 use std::time::{Duration, Instant};
 use std::ptr::NonNull;
 
-pub struct Gc {
-    pub ptrs: HashMap<Id, GcObj>,
-    pub roots: HashSet<Id>,
+pub struct Gc<T: Trace<T>> {
+    pub ptrs: HashMap<Id, GcObj<T>>,
     pub max_id: usize,
     pub last_gc: Instant,
     pub gc_duration: Duration,
 }
 
-impl Gc {
-    pub fn new() -> Gc {
+impl<T: Trace<T>> Gc<T> {
+    pub fn new() -> Gc<T> {
         Gc {
             ptrs: HashMap::new(),
-            roots: HashSet::new(),
             max_id: 0,
             last_gc: Instant::now(),
             gc_duration: Duration::from_secs(5),
@@ -34,10 +32,6 @@ impl Gc {
     }
 
     pub fn collect_garbage(&mut self) {
-        for root in self.roots.iter() {
-            self.ptrs.get(root).unwrap().trace(self);
-        }
-
         let mut to_delete = vec![];
         for obj in self.ptrs.values() {
             match obj.get_marker() {
@@ -53,10 +47,10 @@ impl Gc {
         }
     }
 
-    pub fn take_id(&mut self, id: Id) -> Option<Ponga> {
+    pub fn take(&mut self, id: Id) -> Option<T> {
         self.try_collect_garbage();
         let obj = self.ptrs.get_mut(&id)?;
-        let res = unsafe { *Box::from_raw(obj.data.as_ptr()) };
+        let res = unsafe { *Box::from_raw(obj.data.get().as_ref().unwrap().as_ptr()) };
         self.ptrs.remove(&id);
         Some(res)
     }
@@ -67,7 +61,7 @@ impl Gc {
         id
     }
 
-    pub fn add_obj(&mut self, data: Ponga) -> Id {
+    pub fn add(&mut self, data: T) -> Id {
         self.try_collect_garbage();
         let obj = GcObj::new(self, data);
         let id = obj.id;
@@ -75,10 +69,12 @@ impl Gc {
         id
     }
 
-    pub fn add_obj_with_id(&mut self, data: Ponga, id: Id) {
+    pub fn add_id(&mut self, data: T, id: Id) {
         self.try_collect_garbage();
         let obj = GcObj {
-            data: NonNull::new(Box::into_raw(Box::new(data))).unwrap(),
+            data: UnsafeCell::new(
+                NonNull::new(Box::into_raw(Box::new(data))).unwrap()
+            ),
             flags: UnsafeCell::new(Flags {
                 marker: MarkerFlag::Unseen,
                 taken: TakenFlag::NotTaken,
@@ -90,15 +86,37 @@ impl Gc {
         self.ptrs.insert(obj.id, obj);
     }
 
-    pub fn ponga_into_gc_ref(&mut self, data: Ponga) -> Ponga {
-        Ponga::Ref(self.add_obj(data))
+    pub fn get(&self, id: Id) -> RunRes<&GcObj<T>> {
+        self.ptrs
+            .get(&id)
+            .ok_or(RuntimeErr::ReferenceError(format!(
+                "Reference {} not found",
+                id
+            )))
+    }
+
+    pub fn get_mut(&mut self, id: Id) -> RunRes<&mut GcObj<T>> {
+        self.ptrs
+            .get_mut(&id)
+            .ok_or(RuntimeErr::ReferenceError(format!(
+                "Reference {} not found",
+                id
+            )))
     }
 }
 
-impl GcObj {
-    pub fn new(state: &mut Gc, data: Ponga) -> GcObj {
+impl Gc<Ponga> {
+    pub fn ponga_into_gc_ref(&mut self, data: Ponga) -> Ponga {
+        Ponga::Ref(self.add(data))
+    }
+}
+
+impl<T: Trace<T>> GcObj<T> {
+    pub fn new(state: &mut Gc<T>, data: T) -> GcObj<T> {
         GcObj {
-            data: NonNull::new(Box::into_raw(Box::new(data))).unwrap(),
+            data: UnsafeCell::new(
+                NonNull::new(Box::into_raw(Box::new(data))).unwrap()
+            ),
             flags: UnsafeCell::new(Flags {
                 marker: MarkerFlag::Unseen,
                 taken: TakenFlag::NotTaken,
@@ -109,13 +127,13 @@ impl GcObj {
     }
 }
 
-pub trait Trace {
-    fn trace(&self, gc: &Gc);
+pub trait Trace<T: Trace<T>> {
+    fn trace(&self, gc: &Gc<T>);
 }
 
 // Marks as seen and calls trace on children
-impl Trace for GcObj {
-    fn trace(&self, gc: &Gc) {
+impl<T: Trace<T>> Trace<T> for GcObj<T> {
+    fn trace(&self, gc: &Gc<T>) {
         // Probably don't need this variant
         self.mark_children_not_seen();
 
@@ -125,8 +143,8 @@ impl Trace for GcObj {
 }
 
 // Just calls the true trace on everything that could be a Ref
-impl Trace for Ponga {
-    fn trace(&self, gc: &Gc) {
+impl Trace<Ponga> for Ponga {
+    fn trace(&self, gc: &Gc<Ponga>) {
         match self {
             Ponga::Ref(id) => gc.ptrs.get(id).unwrap().trace(gc),
             Ponga::Array(arr) => {
@@ -169,7 +187,7 @@ impl Trace for Ponga {
     }
 }
 
-impl Drop for Gc {
+impl<T: Trace<T>> Drop for Gc<T> {
     fn drop(&mut self) {
         for obj in self.ptrs.values_mut() {
             obj.free();

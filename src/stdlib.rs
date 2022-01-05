@@ -94,7 +94,7 @@ pub fn cons(runtime: &mut Runtime, mut args: Vec<Ponga>) -> RunRes<Ponga> {
             let mut taken_obj =
                 runtime
                     .gc
-                    .take_id(id)
+                    .take(id)
                     .ok_or(RuntimeErr::ReferenceError(format!(
                         "Reference {} not found",
                         id
@@ -102,7 +102,7 @@ pub fn cons(runtime: &mut Runtime, mut args: Vec<Ponga>) -> RunRes<Ponga> {
             if taken_obj.is_list() {
                 let list = taken_obj.get_list()?;
                 list.push_front(first);
-                runtime.gc.add_obj_with_id(taken_obj, id);
+                runtime.gc.add_id(taken_obj, id);
                 Ok(Ponga::Ref(id))
             } else {
                 Ok(runtime

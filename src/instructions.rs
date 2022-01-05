@@ -4,8 +4,8 @@ use crate::types::*;
 pub enum Instruction {
     Eval(Ponga),
     Call(usize),
-    Pop(String, Option<usize>),
-    Push(String),
+    PopEnv(Option<usize>),
+    PushEnv(Vec<String>),
     Define(String),
     Set(String),
     CollectArray(usize),
@@ -19,8 +19,8 @@ impl std::fmt::Display for Instruction {
         match self {
             Instruction::Eval(ponga) => write!(f, "eval {}", ponga),
             Instruction::Call(n) => write!(f, "call {}", n),
-            Instruction::Pop(name, n) => write!(f, "pop {} {}", name, n.unwrap_or(0)),
-            Instruction::Push(name) => write!(f, "push {}", name),
+            Instruction::PopEnv(_) => write!(f, "pop_env"),
+            Instruction::PushEnv(_) => write!(f, "push_env"),
             Instruction::Define(name) => write!(f, "define {}", name),
             Instruction::Set(name) => write!(f, "set {}", name),
             Instruction::CollectArray(n) => write!(f, "collect array {}", n),

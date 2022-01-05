@@ -3,6 +3,7 @@ use crate::gc_obj::*;
 use crate::parser::*;
 use crate::stdlib::*;
 use crate::types::*;
+use crate::env::*;
 use crate::instructions::*;
 use itertools::Itertools;
 use std::collections::HashMap;
@@ -17,10 +18,9 @@ pub type Namespace = HashMap<String, Ponga>;
 pub type PriorityNamespace = HashMap<String, Vec<Ponga>>;
 
 pub struct Runtime {
-    pub globals: Namespace,
-    pub global_funcs: Namespace,
-    pub locals: PriorityNamespace,
-    pub gc: Gc,
+    pub env: Env,
+    pub gc: Gc<Ponga>,
+    pub env_gc: Gc<Env>,
 }
 
 pub enum WhereVar {
@@ -31,18 +31,16 @@ pub enum WhereVar {
 
 impl Runtime {
     pub fn new() -> Self {
-        let mut global_funcs = Namespace::new();
-        let gc = Gc::new();
+        let mut env = Env::new(None);
 
         for (i, val) in FUNCS.iter().enumerate() {
-            global_funcs.insert(val.0.to_string(), Ponga::HFunc(i));
+            env.map.insert(val.0.to_string(), Ponga::HFunc(i));
         }
 
         let mut res = Self {
-            globals: Namespace::new(),
-            global_funcs,
-            locals: PriorityNamespace::new(),
-            gc,
+            env,
+            gc: Gc::new(),
+            env_gc: Gc::new(),
         };
 
         let stdlib_scm = include_str!("stdlib.scm");
@@ -51,148 +49,32 @@ impl Runtime {
         res
     }
 
-    pub fn condense_locals(&self) -> HashMap<String, Ponga> {
-        let mut res = HashMap::new();
-        for (k, v) in self.locals.iter() {
-            res.insert(k.clone(), v[v.len() - 1].clone());
-        }
-        res
-    }
-
     pub fn bind_global(&mut self, s: String, pong: Ponga) {
-        self.globals.insert(s, pong);
-    }
-
-    pub fn unbind_global(&mut self, s: &str) {
-        self.globals.remove(s);
-    }
-
-    pub fn add_roots_to_gc(&mut self) {
-        self.gc.roots = std::collections::HashSet::new();
-        for v in self.globals.values() {
-            match v {
-                Ponga::Ref(id) => { self.gc.roots.insert(*id); },
-                _ => (),
-            }
-        }
-        for vec in self.locals.values() {
-            for i in vec.iter() {
-                match i {
-                    Ponga::Ref(id) => { self.gc.roots.insert(*id); },
-                    _ => (),
-                }
-            }
-        }
+        self.env.insert_furthest(&mut self.env_gc, s, pong);
     }
 
     pub fn collect_garbage(&mut self) {
-        self.add_roots_to_gc();
+        self.env.trace(&self.gc);
         self.gc.collect_garbage();
-        self.gc.roots.clear();
+
+        self.env.trace(&self.env_gc);
+        self.env_gc.collect_garbage();
     }
 
-    pub fn get_id_obj_ref(&self, id: Id) -> RunRes<&GcObj> {
-        self.gc
-            .ptrs
-            .get(&id)
-            .ok_or(RuntimeErr::ReferenceError(format!(
-                "Reference {} not found",
-                id
-            )))
+    pub fn get_id_obj_ref(&self, id: Id) -> RunRes<&GcObj<Ponga>> {
+        self.gc.get(id)
     }
 
-    pub fn get_id_obj(&mut self, id: Id) -> RunRes<&mut GcObj> {
-        self.gc
-            .ptrs
-            .get_mut(&id)
-            .ok_or(RuntimeErr::ReferenceError(format!(
-                "Reference {} not found",
-                id
-            )))
+    pub fn get_id_obj(&mut self, id: Id) -> RunRes<&mut GcObj<Ponga>> {
+        self.gc.get_mut(id)
     }
 
     pub fn get_identifier_obj_ref(&self, identifier: &str) -> RunRes<&Ponga> {
-        match self.locals.get(identifier) {
-            Some(v) => {
-                return Ok(&v[v.len() - 1])
-            }
-            None => (),
-        }
-        match self.globals.get(identifier) {
-            Some(v) => return Ok(v),
-            None => (),
-        }
-        match self.global_funcs.get(identifier) {
-            Some(v) => Ok(v),
-            None => Err(RuntimeErr::ReferenceError(format!(
-                "Identifier {} not found",
-                identifier
-            )))
-        }
-
+        self.env.get(&self.env_gc, identifier)
     }
 
     pub fn set_identifier(&mut self, identifier: &str, pong: Ponga) -> RunRes<()> {
-        match self.locals.get_mut(identifier) {
-            Some(v) => {
-                let l = v.len();
-                v[l - 1] = pong;
-                return Ok(());
-            }
-            None => (),
-        }
-        match self.globals.get_mut(identifier) {
-            Some(v) => {
-                *v = pong;
-                return Ok(());
-            }
-            None => (),
-        }
-        Err(RuntimeErr::ReferenceError(format!(
-                    "Identifier {} used in set is unknown", identifier
-        )))
-    }
-
-    pub fn pop_local(&mut self, identifier: &str) -> Ponga {
-        let vec = self.locals.get_mut(identifier).unwrap();
-        let res = vec.pop().unwrap();
-        if vec.len() == 0 {
-            self.locals.remove(identifier);
-        }
-        res
-    }
-
-    pub fn pop_identifier_obj(&mut self, identifier: &str) -> RunRes<(Ponga, WhereVar)> {
-        let entry = self.locals.get_mut(identifier);
-        match entry {
-            Some(v) => {
-                let res = v.pop().unwrap();
-                if v.is_empty() {
-                    drop(v);
-                    self.locals.remove(identifier);
-                }
-                return Ok((res, WhereVar::Local));
-            }
-            None => (),
-        }
-        match self.globals.remove_entry(identifier) {
-            Some((_, v)) => return Ok((v, WhereVar::Global)),
-            None => (),
-        }
-        match self.global_funcs.remove_entry(identifier) {
-            Some((_, v)) => Ok((v, WhereVar::GlobalFunc)),
-            None => Err(RuntimeErr::ReferenceError(format!(
-                "Identifier {} not found",
-                identifier
-            )))
-        }
-    }
-
-    pub fn push_local(&mut self, identifier: &str, pong: Ponga) {
-        self.locals
-            .entry(identifier.to_string())
-            .or_insert(Vec::new())
-            .push(pong);
+        self.env.set(&mut self.env_gc, identifier, pong)
     }
 
     pub fn clone_ref(&mut self, pong: Ponga) -> RunRes<Ponga> {
@@ -243,23 +125,11 @@ impl Runtime {
         }
     }
 
-    pub fn state_to_string(&self) -> String {
-        format!("Locals: {}\nGlobals: {}",
-                self.ponga_to_string_no_id(&Ponga::Object(self.condense_locals())),
-                self.ponga_to_string_no_id(&Ponga::Object(self.globals.clone())))
-    }
-
     pub fn eval(&mut self, pong: Ponga) -> RunRes<Ponga> {
         use Ponga::*;
         let mut data_stack = vec![];
         let mut ins_stack = vec![Instruction::Eval(pong)];
         loop {
-            //println!("{}", ins_stack[ins_stack.len() - 1]);
-            // if data_stack.len() != 0 {
-            //     println!("Data top: {}", self.ponga_to_string_no_id(
-            //         &data_stack[data_stack.len() - 1]
-            //     ));
-            // }
             if ins_stack.len() > MAX_STACK_SIZE {
                 return Err(RuntimeErr::Other(format!(
                     "Stack size exceeded max of {}", MAX_STACK_SIZE
@@ -273,22 +143,27 @@ impl Runtime {
                     self.bind_global(s, pop_or(&mut data_stack)?);
                     data_stack.push(Ponga::Null);
                 }
-                Instruction::Push(s) => self.push_local(&s, pop_or(&mut data_stack)?),
-                Instruction::Pop(s, opt_id) => {
-                    let val = self.pop_local(&s);
-                    match opt_id {
-                        Some(id) => {
-                            match self.set_identifier(&s, val.clone()) {_=>()}; 
-                            let state_obj = self.get_id_obj(id)?;
-                            let mut borrowed = state_obj.borrow_mut().unwrap();
-                            borrowed.inner()
-                                    .extract_map_ref_mut()
-                                    .unwrap()
-                                    .insert(s, val);
-                        }
-                        _ => (),
+                Instruction::PopEnv(n) => {
+                    let map = std::mem::replace(&mut self.env.map, HashMap::new());
+                    if let Some(id) = n {
+                        self.env_gc.add_id(Env::from_map(map), id);
                     }
-                },
+                    let id = self.env.outer.ok_or(
+                        RuntimeErr::Other("Expected environment".to_string())
+                    )?;
+                    self.env = self.env_gc.take(id).ok_or(
+                        RuntimeErr::Other(format!("Expected env ref {}", id))
+                    )?;
+                }
+                Instruction::PushEnv(names) => {
+                    let mut map = HashMap::new();
+                    for name in names {
+                        let val = pop_or(&mut data_stack)?;
+                        map.insert(name, val);
+                    }
+                    let old_env = std::mem::replace(&mut self.env, Env::new(None));
+                    self.env = old_env.integrate_hashmap(&mut self.env_gc, map);
+                }
                 Instruction::Set(s) => { 
                     let data = pop_or(&mut data_stack)?;
                     self.set_identifier(&s, data)?;
@@ -334,54 +209,40 @@ impl Runtime {
                             data_stack.push(FUNCS[id].1(self, args)?);
                         }
                         CFunc(args_names, sexpr_id, state_id) => {
-                            let state_obj = self.get_id_obj_ref(state_id)?.clone();
-
-                            // Pop the entire state after we're done evaluating
-                            let ref_gc_obj = state_obj.borrow().unwrap();
-                            let state_map_ref = ref_gc_obj.extract_map_ref().unwrap();
-                            for (name, _) in state_map_ref.into_iter() {
-                                ins_stack.push(Instruction::Pop(name.clone(),
-                                                                Some(state_id)));
-                            } 
-
-                            // Pop all of the args before popping state
-                            for name in args_names.iter() {
-                                ins_stack.push(Instruction::Pop(name.clone(),
-                                                                None));
-                            } 
+                            ins_stack.push(Instruction::PopEnv(Some(state_id)));
+                            ins_stack.push(Instruction::PopEnv(None));
 
                             // Push S-Expr to be evaluated
                             let sexpr_obj = self.get_id_obj_ref(sexpr_id)?;
                             let sexpr = sexpr_obj.borrow().unwrap().clone();
                             ins_stack.push(Instruction::Eval(sexpr));
 
-                            let state_map = state_obj.borrow()
-                                                     .unwrap()
-                                                     .clone()
-                                                     .extract_map()
-                                                     .unwrap();
+                            let state_obj = self.env_gc.take(state_id).unwrap();
+                            let state_map = state_obj.map;
 
-                            // Push the entire state, can just do now, don't need to delay
-                            for (name, val) in state_map.into_iter() {
-                                self.push_local(&name, val);
-                            } 
+                            // Push the state
+                            let old_env = std::mem::replace(&mut self.env, Env::new(None));
+                            self.env = old_env.integrate_hashmap(&mut self.env_gc, state_map);
 
-                            // Push all of the names and arg values onto the stack
-                            for (name, val) in args_names.iter().zip(args.into_iter()) {
-                                self.push_local(&name, val);
-                            } 
+                            // Push all of the names and arg values
+                            let args_map = args_names.iter()
+                                                     .cloned()
+                                                     .zip(args.into_iter())
+                                                     .collect();
+                            let old_env = std::mem::replace(&mut self.env, Env::new(None));
+                            self.env = old_env.integrate_hashmap(&mut self.env_gc, args_map);
                         } 
                         MFunc(args_names, sexpr_id) => {
-                            // Pop all of the args before popping state
-                            for name in args_names.iter() {
-                                ins_stack.push(Instruction::Pop(name.clone(),
-                                                                None));
-                            }
+                            ins_stack.push(Instruction::PopEnv(None));
 
-                            // Push all of the names and arg values onto the stack
-                            for (name, val) in args_names.iter().rev().zip(args.into_iter()) {
-                                self.push_local(&name, val);
-                            } 
+                            // Push all of the names and arg values
+                            let args_map = args_names.iter()
+                                                     .rev()
+                                                     .cloned()
+                                                     .zip(args.into_iter())
+                                                     .collect();
+                            let old_env = std::mem::replace(&mut self.env, Env::new(None));
+                            self.env = old_env.integrate_hashmap(&mut self.env_gc, args_map);
 
                             // Push S-Expr to be evaluated
                             let sexpr_obj = self.get_id_obj_ref(sexpr_id)?;
@@ -573,9 +434,9 @@ match func {
                 cargs.push(i.extract_name()?);
             }
 
-            let new_state = Ponga::Object(self.condense_locals());
-            let state_id = self.gc.add_obj(new_state);
-            let body_id = self.gc.add_obj(body);
+            let new_state = self.env.copy(&self.env_gc);
+            let state_id = self.env_gc.add(new_state);
+            let body_id = self.gc.add(body);
 
 
             data_stack.push(CFunc(cargs, body_id, state_id));
@@ -609,9 +470,9 @@ match func {
                 cargs.push(i.extract_name()?);
             }
 
-            let new_state = Ponga::Object(HashMap::new());
-            let state_id = self.gc.add_obj(new_state);
-            let body_id = self.gc.add_obj(body);
+            let new_state = Env::new(None);
+            let state_id = self.env_gc.add(new_state);
+            let body_id = self.gc.add(body);
 
 
             data_stack.push(CFunc(cargs, body_id, state_id));
@@ -645,7 +506,7 @@ match func {
                 cargs.push(i.extract_name()?);
             }
 
-            let body_id = self.gc.add_obj(body);
+            let body_id = self.gc.add(body);
 
             data_stack.push(MFunc(cargs, body_id));
             continue;
@@ -712,6 +573,7 @@ match func {
             
             let v = first.get_array()?;
             let mut names = Vec::new();
+            let mut vals = Vec::new();
             for pair in v.into_iter().rev() {
                 if !pair.is_sexpr() {
                     return Err(RuntimeErr::Other(
@@ -742,14 +604,14 @@ match func {
                 }?;
                 let val = inner_iter.next().unwrap();
 
-                names.push((id.clone(), val));
-                ins_stack.push(Instruction::Pop(id, None));
-
+                names.push(id.clone());
+                vals.push(val);
             }
+            ins_stack.push(Instruction::PopEnv(None));
             ins_stack.push(Instruction::Eval(body));
 
-            for (name, val) in names {
-                ins_stack.push(Instruction::Push(name));
+            ins_stack.push(Instruction::PushEnv(names));
+            for val in vals {
                 ins_stack.push(Instruction::Eval(val));
             }
 
@@ -776,6 +638,7 @@ match func {
             
             let v = first.get_array()?;
             let mut names = Vec::new();
+            let mut vals = Vec::new();
             for pair in v.into_iter().rev() {
                 if !pair.is_sexpr() {
                     return Err(RuntimeErr::Other(
@@ -792,17 +655,16 @@ match func {
                 let id = inner_iter.next().unwrap().extract_name()?;
                 let val = inner_iter.next().unwrap();
 
-                names.push((id.clone(), val));
-                ins_stack.push(Instruction::Pop(id, None));
-
+                names.push(id.clone());
+                vals.push(val);
             }
+            ins_stack.push(Instruction::PopEnv(None));
             ins_stack.push(Instruction::Eval(body));
 
-            for (name, val) in names {
-                ins_stack.push(Instruction::Push(name));
+            ins_stack.push(Instruction::PushEnv(names));
+            for val in vals {
                 ins_stack.push(Instruction::Eval(val));
             }
-
         }
         "define" => {
             if iter.len() != 2 {
