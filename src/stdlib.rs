@@ -3,6 +3,8 @@ use crate::types::*;
 use crate::number::*;
 use std::collections::LinkedList;
 use std::collections::HashMap;
+use gc_rs::gc::*;
+use gc_rs::gc_ref::*;
 
 pub const FUNCS: &[(&str, fn(&mut Runtime, Vec<Ponga>) -> RunRes<Ponga>)] = &[
     ("cons", cons),
@@ -105,14 +107,18 @@ pub fn cons(runtime: &mut Runtime, mut args: Vec<Ponga>) -> RunRes<Ponga> {
                 runtime.gc.add_id(taken_obj, id);
                 Ok(Ponga::Ref(id))
             } else {
-                Ok(runtime
-                    .gc
-                    .ponga_into_gc_ref(Ponga::List([first, Ponga::Ref(id)].into_iter().collect())))
+                let id = runtime.gc.add(
+                    Ponga::List([first, Ponga::Ref(id)].into_iter().collect())
+                );
+                Ok(Ponga::Ref(id))
             }
         }
-        _ => Ok(runtime
-            .gc
-            .ponga_into_gc_ref(Ponga::List([first, snd].into_iter().collect()))),
+        _ => {
+            let id = runtime.gc.add(
+                Ponga::List([first, snd].into_iter().collect()),
+            );
+            Ok(Ponga::Ref(id))
+        }
     }
 }
 
@@ -124,12 +130,10 @@ pub fn null(runtime: &mut Runtime, mut args: Vec<Ponga>) -> RunRes<Ponga> {
         Ponga::List(list) => Ok(bool_to_ponga(list.is_empty())),
         Ponga::Null => Ok(Ponga::True),
         Ponga::Ref(id) => {
-            let mut obj = runtime.get_id_obj(id)?.borrow_mut().unwrap();
-            let r = obj.inner();
-            match r {
+            let mut r = runtime.get_id_obj(id)?;
+            match r.as_mut() {
                 Ponga::List(list) => {
                     let res = bool_to_ponga(list.is_empty());
-                    drop(obj);
                     Ok(res)
                 }
                 Ponga::Null => Ok(Ponga::True),
@@ -163,15 +167,9 @@ pub fn car(runtime: &mut Runtime, mut args: Vec<Ponga>) -> RunRes<Ponga> {
     let mut args = transform_args(runtime, args)?;
     let arg = args.pop().unwrap();
     match arg {
-        Ponga::List(list) => Ok(list
-            .iter()
-            .next()
-            .ok_or(RuntimeErr::TypeError(format!("car of empty list")))?
-            .clone()),
         Ponga::Ref(id) => {
-            let mut obj = runtime.get_id_obj(id)?.borrow_mut().unwrap();
-            let r = obj.inner();
-            match r {
+            let r = runtime.get_id_obj_ref(id)?;
+            match r.as_ref() {
                 Ponga::List(list) => Ok(list
                     .iter()
                     .next()
@@ -193,8 +191,7 @@ pub fn map_(runtime: &mut Runtime, mut args: Vec<Ponga>) -> RunRes<Ponga> {
         let mut fail = true;
         if let Ponga::Ref(id) = &func {
             let obj = runtime.get_id_obj_ref(*id)?;
-            let obj_ref = obj.borrow().unwrap();
-            if obj_ref.inner().is_func() {
+            if obj.is_func() {
                 fail = false;
             }
         }
@@ -207,44 +204,40 @@ pub fn map_(runtime: &mut Runtime, mut args: Vec<Ponga>) -> RunRes<Ponga> {
     
     match iterable {
         Ponga::Ref(id) => {
-            let obj = runtime.get_id_obj_ref(id)?.borrow().unwrap();
-            let r = obj.inner();
-            match r {
+            let r = runtime.get_id_obj_ref(id)?;
+            match r.as_ref() {
                 Ponga::List(list) => {
                     let cloned: LinkedList<Ponga> = list.clone();
                     drop(list);
-                    drop(obj);
                     let mut res = LinkedList::new();
                     for i in cloned.into_iter() {
                         let sexpr = Ponga::Sexpr(vec![func.clone(), i]);
                         res.push_back(runtime.eval(sexpr)?);
                     }
-                    let res_ref = runtime.gc.ponga_into_gc_ref(Ponga::List(res));
-                    Ok(res_ref)
+                    let res_id = runtime.gc.add(Ponga::List(res));
+                    Ok(Ponga::Ref(res_id))
                 }
                 Ponga::Array(arr) => {
                     let cloned: Vec<Ponga> = arr.clone();
                     drop(arr);
-                    drop(obj);
                     let mut res = Vec::new();
                     for i in cloned.into_iter() {
                         let sexpr = Ponga::Sexpr(vec![func.clone(), i]);
                         res.push(runtime.eval(sexpr)?);
                     }
-                    let res_ref = runtime.gc.ponga_into_gc_ref(Ponga::Array(res));
-                    Ok(res_ref)
+                    let res_id = runtime.gc.add(Ponga::Array(res));
+                    Ok(Ponga::Ref(res_id))
                 }
                 Ponga::Object(o) => {
                     let cloned: HashMap<String, Ponga> = o.clone();
                     drop(o);
-                    drop(obj);
                     let mut res = HashMap::new();
                     for (k, v) in cloned.into_iter() {
                         let sexpr = Ponga::Sexpr(vec![func.clone(), v]);
                         res.insert(k, runtime.eval(sexpr)?);
                     }
-                    let res_ref = runtime.gc.ponga_into_gc_ref(Ponga::Object(res));
-                    Ok(res_ref)
+                    let res_id = runtime.gc.add(Ponga::Object(res));
+                    Ok(Ponga::Ref(res_id))
                 }
                 _ => Err(RuntimeErr::TypeError(format!("map requires an iterable"))),
             }
@@ -265,14 +258,9 @@ pub fn cdr(runtime: &mut Runtime, mut args: Vec<Ponga>) -> RunRes<Ponga> {
     let mut args = transform_args(runtime, args)?;
     let arg = args.pop().unwrap();
     match arg {
-        Ponga::List(mut list) => {
-            list.pop_front();
-            Ok(Ponga::List(list))
-        }
         Ponga::Ref(id) => {
-            let mut obj = runtime.get_id_obj(id)?.borrow_mut().unwrap();
-            let r = obj.inner();
-            match r {
+            let obj = runtime.get_id_obj_ref(id)?;
+            match obj.as_ref() {
                 Ponga::List(list) => Ok(Ponga::List(list.iter().skip(1).cloned().collect())),
                 _ => Err(RuntimeErr::TypeError(format!("car requires a list"))),
             }
@@ -499,8 +487,7 @@ pub fn foldl(runtime: &mut Runtime, mut args: Vec<Ponga>) -> RunRes<Ponga> {
         let mut fail = true;
         if let Ponga::Ref(id) = &func {
             let obj = runtime.get_id_obj_ref(*id)?;
-            let obj_ref = obj.borrow().unwrap();
-            if obj_ref.inner().is_func() {
+            if obj.is_func() {
                 fail = false;
             }
         }
@@ -514,9 +501,8 @@ pub fn foldl(runtime: &mut Runtime, mut args: Vec<Ponga>) -> RunRes<Ponga> {
     
     match iterable {
         Ponga::Ref(id) => {
-            let obj = runtime.get_id_obj_ref(id)?.borrow().unwrap();
-            let r = obj.inner();
-            match r {
+            let obj = runtime.get_id_obj_ref(id)?;
+            match obj.as_ref() {
                 Ponga::List(list) => {
                     let cloned: LinkedList<Ponga> = list.clone();
                     drop(list);
@@ -564,8 +550,7 @@ pub fn foldr(runtime: &mut Runtime, mut args: Vec<Ponga>) -> RunRes<Ponga> {
         let mut fail = true;
         if let Ponga::Ref(id) = &func {
             let obj = runtime.get_id_obj_ref(*id)?;
-            let obj_ref = obj.borrow().unwrap();
-            if obj_ref.inner().is_func() {
+            if obj.is_func() {
                 fail = false;
             }
         }
@@ -578,9 +563,8 @@ pub fn foldr(runtime: &mut Runtime, mut args: Vec<Ponga>) -> RunRes<Ponga> {
     
     match iterable {
         Ponga::Ref(id) => {
-            let obj = runtime.get_id_obj_ref(id)?.borrow().unwrap();
-            let r = obj.inner();
-            match r {
+            let obj = runtime.get_id_obj_ref(id)?;
+            match obj.as_ref() {
                 Ponga::List(list) => {
                     let cloned: LinkedList<Ponga> = list.clone();
                     drop(list);
@@ -624,9 +608,8 @@ pub fn vector_len(runtime: &mut Runtime, args: Vec<Ponga>) -> RunRes<Ponga> {
     let arg = args.pop().unwrap();
     match arg {
         Ponga::Ref(id) => {
-            let obj = runtime.get_id_obj_ref(id)?.borrow().unwrap();
-            let r = obj.inner();
-            match r {
+            let obj = runtime.get_id_obj_ref(id)?;
+            match obj.as_ref() {
                 Ponga::Array(v) => Ok(Ponga::Number(Number::Int(v.len() as isize))),
                 _ => Err(RuntimeErr::TypeError(format!("vector-length requires a vector"))),
             } 
@@ -645,9 +628,8 @@ pub fn vector_ref(runtime: &mut Runtime, args: Vec<Ponga>) -> RunRes<Ponga> {
     let arg = runtime.eval(args.pop().unwrap())?;
     match arg {
         Ponga::Ref(id) => {
-            let obj = runtime.get_id_obj_ref(id)?.borrow().unwrap();
-            let r = obj.inner();
-            match r {
+            let obj = runtime.get_id_obj_ref(id)?;
+            match obj.as_ref() {
                 Ponga::Array(v) => {
                     let n = n.get_number()?.to_isize();
                     if n < 0 || n >= v.len() as isize {
@@ -667,16 +649,18 @@ pub fn vector_ref(runtime: &mut Runtime, args: Vec<Ponga>) -> RunRes<Ponga> {
 pub fn vector_append(runtime: &mut Runtime, args: Vec<Ponga>) -> RunRes<Ponga> {
     args_assert_len(&args, 2, "vector-append!")?;
     let mut args = transform_args(runtime, args)?;
-    // println!("APPEND: {:?}", args);
+    println!("APPEND: {:?}", args);
     let n = args.pop().unwrap();
     let arg = args.pop().unwrap();
     match arg {
         Ponga::Ref(id) => {
-            let mut obj = runtime.get_id_obj(id)?.borrow_mut().unwrap();
-            let r = obj.inner();
-            match r {
+            println!("{:?}", runtime.gc.ptrs);
+            let mut obj = runtime.get_id_obj(id)?;
+            match obj.as_mut() {
                 Ponga::Array(v) => {
                     v.push(n);
+            println!("\n\n-----------------------\n\n");
+            println!("{:?}", runtime.gc.ptrs);
                     Ok(Ponga::Ref(id))
                 }
                 _ => Err(RuntimeErr::TypeError(format!("vector-append! requires a vector"))),
@@ -729,9 +713,8 @@ pub fn map_ref(runtime: &mut Runtime, args: Vec<Ponga>) -> RunRes<Ponga> {
     let arg = args.pop().unwrap();
     match arg {
         Ponga::Ref(id) => {
-            let obj = runtime.get_id_obj_ref(id)?.borrow().unwrap();
-            let r = obj.inner();
-            match r {
+            let obj = runtime.get_id_obj_ref(id)?;
+            match obj.as_ref() {
                 Ponga::Object(o) => {
                     let s = runtime.ponga_to_string(&n);
                     let v = o.get(s.as_str()).unwrap_or(&Ponga::Null);
@@ -753,9 +736,8 @@ pub fn map_set(runtime: &mut Runtime, args: Vec<Ponga>) -> RunRes<Ponga> {
     match arg {
         Ponga::Ref(id) => {
             let s = runtime.ponga_to_string(&key);
-            let mut obj = runtime.get_id_obj(id)?.borrow_mut().unwrap();
-            let r = obj.inner();
-            match r {
+            let mut obj = runtime.get_id_obj(id)?;
+            match obj.as_mut() {
                 Ponga::Object(o) => {
                     o.insert(s, val);
                     Ok(Ponga::Ref(id))
@@ -774,9 +756,8 @@ pub fn map_contains(runtime: &mut Runtime, args: Vec<Ponga>) -> RunRes<Ponga> {
     let arg = args.pop().unwrap();
     match arg {
         Ponga::Ref(id) => {
-            let obj = runtime.get_id_obj_ref(id)?.borrow().unwrap();
-            let r = obj.inner();
-            match r {
+            let obj = runtime.get_id_obj_ref(id)?;
+            match obj.as_ref() {
                 Ponga::Object(o) => {
                     let s = runtime.ponga_to_string(&n);
                     let v = o.get(s.as_str()).is_some();
@@ -793,9 +774,8 @@ fn insert_list_pair_into_map(runtime: &Runtime, map: &mut HashMap<String, Ponga>
                              pair: &Ponga) -> RunRes<()> {
     match pair {
         Ponga::Ref(id) => {
-            let obj = runtime.get_id_obj_ref(*id)?.borrow().unwrap();
-            let r = obj.inner();
-            if let Ponga::List(list) = r {
+            let r = runtime.get_id_obj_ref(*id)?;
+            if let Ponga::List(list) = r.as_ref() {
                 if list.len() == 2 {
                     let mut iter = list.iter();
                     let key = iter.next().unwrap();
@@ -821,9 +801,8 @@ pub fn list_to_map(runtime: &mut Runtime, mut args: Vec<Ponga>) -> RunRes<Ponga>
     
     match list {
         Ponga::Ref(id) => {
-            let obj = runtime.get_id_obj_ref(id)?.borrow().unwrap();
-            let r = obj.inner();
-            match r {
+            let obj = runtime.get_id_obj_ref(id)?;
+            match obj.as_ref() {
                 Ponga::List(list) => {
                     let mut map = HashMap::new();
                     for item in list {
@@ -860,8 +839,8 @@ pub fn list_to_string(runtime: &mut Runtime, mut args: Vec<Ponga>) -> RunRes<Pon
     let s = args.pop().unwrap();
     match s {
         Ponga::Ref(id) => {
-            let obj = runtime.get_id_obj_ref(id)?.borrow().unwrap();
-            let chars = obj.inner().get_list_ref()?.iter();
+            let obj = runtime.get_id_obj_ref(id)?;
+            let chars = obj.get_list_ref()?.iter();
             let mut string = String::new();
             for ch in chars {
                 string.push(ch.char_to_char()?);
@@ -885,9 +864,8 @@ pub fn len(runtime: &mut Runtime, mut args: Vec<Ponga>) -> RunRes<Ponga> {
     
     match iterable {
         Ponga::Ref(id) => {
-            let obj = runtime.get_id_obj_ref(id)?.borrow().unwrap();
-            let r = obj.inner();
-            match r {
+            let obj = runtime.get_id_obj_ref(id)?;
+            match obj.as_ref() {
                 Ponga::List(list) => Ok(Ponga::Number(Number::Int(list.len() as isize))),
                 Ponga::Array(arr) => Ok(Ponga::Number(Number::Int(arr.len() as isize))),
                 Ponga::Object(o) => Ok(Ponga::Number(Number::Int(o.len() as isize))),
@@ -906,18 +884,19 @@ pub fn reverse(runtime: &mut Runtime, mut args: Vec<Ponga>) -> RunRes<Ponga> {
     
     match iterable {
         Ponga::Ref(id) => {
-            let obj = runtime.get_id_obj_ref(id)?.borrow().unwrap();
-            let r = obj.inner();
-            match r {
+            let obj = runtime.get_id_obj_ref(id)?;
+            match obj.as_ref() {
                 Ponga::List(list) => {
                     let res = Ponga::List(list.into_iter().rev().cloned().collect());
                     drop(obj);
-                    Ok(runtime.gc.ponga_into_gc_ref(res))
+                    let id = runtime.gc.add(res);
+                    Ok(Ponga::Ref(id))
                 }
                 Ponga::Array(arr) => {
                     let res = Ponga::Array(arr.into_iter().rev().cloned().collect());
                     drop(obj);
-                    Ok(runtime.gc.ponga_into_gc_ref(res))
+                    let id = runtime.gc.add(res);
+                    Ok(Ponga::Ref(id))
                 }
                 _ => Ok(Ponga::Ref(id)),
             }

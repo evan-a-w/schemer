@@ -1,7 +1,5 @@
 #![allow(dead_code)]
 
-mod gc;
-mod gc_obj;
 mod parser;
 mod ratio;
 mod runtime;

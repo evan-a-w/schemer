@@ -1,10 +1,10 @@
-use crate::gc::*;
-use crate::gc_obj::*;
 use crate::parser::*;
 use crate::stdlib::*;
 use crate::types::*;
 use crate::env::*;
 use crate::instructions::*;
+use gc_rs::gc::*;
+use gc_rs::gc_ref::*;
 use itertools::Itertools;
 use std::collections::HashMap;
 use std::collections::LinkedList;
@@ -18,7 +18,7 @@ pub type Namespace = HashMap<String, Ponga>;
 pub type PriorityNamespace = HashMap<String, Vec<Ponga>>;
 
 pub struct Runtime {
-    pub env: Env,
+    pub env: GcRefMut<Env>,
     pub gc: Gc<Ponga>,
     pub env_gc: Gc<Env>,
 }
@@ -31,7 +31,8 @@ pub enum WhereVar {
 
 impl Runtime {
     pub fn new() -> Self {
-        let mut env = Env::new(None);
+        let mut env_gc = Gc::new();
+        let mut env = Env::new(None).to_ref_mut(&mut env_gc);
 
         for (i, val) in FUNCS.iter().enumerate() {
             env.map.insert(val.0.to_string(), Ponga::HFunc(i));
@@ -39,8 +40,8 @@ impl Runtime {
 
         let mut res = Self {
             env,
+            env_gc,
             gc: Gc::new(),
-            env_gc: Gc::new(),
         };
 
         let stdlib_scm = include_str!("stdlib.scm");
@@ -50,39 +51,52 @@ impl Runtime {
     }
 
     pub fn bind_global(&mut self, s: String, pong: Ponga) {
-        self.env.insert_furthest(&mut self.env_gc, s, pong);
+        self.env.insert_furthest(s, pong);
     }
 
     pub fn collect_garbage(&mut self) {
-        self.env.trace(&self.gc);
+        self.env.as_ref().trace(&self.gc);
         self.gc.collect_garbage();
 
         self.env.trace(&self.env_gc);
         self.env_gc.collect_garbage();
     }
 
-    pub fn get_id_obj_ref(&self, id: Id) -> RunRes<&GcObj<Ponga>> {
-        self.gc.get(id)
+    pub fn get_id_obj_ref(&self, id: Id) -> RunRes<GcRef<Ponga>> {
+        self.gc.get(id).ok_or(RuntimeErr::ReferenceError(
+            format!("Reference to id {} not found", id),
+        ))
     }
 
-    pub fn get_id_obj(&mut self, id: Id) -> RunRes<&mut GcObj<Ponga>> {
-        self.gc.get_mut(id)
+    pub fn get_id_obj(&mut self, id: Id) -> RunRes<GcRefMut<Ponga>> {
+        self.gc.get_mut(id).ok_or(RuntimeErr::ReferenceError(
+            format!("Reference to id {} not found", id),
+        ))
     }
 
     pub fn get_identifier_obj_ref(&self, identifier: &str) -> RunRes<&Ponga> {
-        self.env.get(&self.env_gc, identifier)
+        self.env.get(identifier).ok_or(
+            RuntimeErr::ReferenceError(format!("Reference to {} not found", identifier)),
+        )
     }
 
     pub fn set_identifier(&mut self, identifier: &str, pong: Ponga) -> RunRes<()> {
-        self.env.set(&mut self.env_gc, identifier, pong)
+        match self.env.get_mut(identifier) {
+            Some(pong_ref) => {
+                *pong_ref = pong;
+                Ok(())
+            }
+            None => Err(RuntimeErr::ReferenceError(
+                format!("Reference to {} not found", identifier),
+            )),
+        }
     }
 
     pub fn clone_ref(&mut self, pong: Ponga) -> RunRes<Ponga> {
         match pong {
             Ponga::Ref(id) => {
                 let ref_obj = self.get_id_obj_ref(id)?;
-                let inner = ref_obj.borrow().unwrap();
-                Ok(inner.inner().clone())
+                Ok(ref_obj.as_ref().clone())
             }
             Ponga::Identifier(s) => {
                 let ref_obj = self.get_identifier_obj_ref(&s)?;
@@ -96,9 +110,8 @@ impl Runtime {
         match pong {
             Ponga::Ref(id) => {
                 let ref_obj = self.get_id_obj_ref(id)?;
-                let inner = ref_obj.borrow().unwrap();
-                if inner.inner().is_copy() {
-                    Ok(inner.inner().clone())
+                if ref_obj.is_copy() {
+                    Ok(ref_obj.as_ref().clone())
                 } else {
                     Ok(Ponga::Ref(id))
                 }
@@ -110,16 +123,17 @@ impl Runtime {
                 } else {
                     let cloned = ref_obj.clone();
                     drop(ref_obj);
-                    let r = self.gc.ponga_into_gc_ref(cloned);
-                    self.set_identifier(&s, r.clone())?;
-                    Ok(r)
+                    let add_id = self.gc.add(cloned);
+                    self.set_identifier(&s, Ponga::Ref(add_id))?;
+                    Ok(Ponga::Ref(add_id))
                 }
             }
             _ => {
                 if pong.is_copy() {
                     Ok(pong)
                 } else {
-                    Ok(self.gc.ponga_into_gc_ref(pong))
+                    let add_id = self.gc.add(pong);
+                    Ok(Ponga::Ref(add_id))
                 }
             }
         }
@@ -130,6 +144,7 @@ impl Runtime {
         let mut data_stack = vec![];
         let mut ins_stack = vec![Instruction::Eval(pong)];
         loop {
+            // println!("Env: {}", self.env.as_ref());
             if ins_stack.len() > MAX_STACK_SIZE {
                 return Err(RuntimeErr::Other(format!(
                     "Stack size exceeded max of {}", MAX_STACK_SIZE
@@ -143,17 +158,18 @@ impl Runtime {
                     self.bind_global(s, pop_or(&mut data_stack)?);
                     data_stack.push(Ponga::Null);
                 }
-                Instruction::PopEnv(n) => {
-                    let map = std::mem::replace(&mut self.env.map, HashMap::new());
-                    if let Some(id) = n {
-                        self.env_gc.add_id(Env::from_map(map), id);
+                Instruction::PopEnv(opt_level) => {
+                    if let Some(level) = opt_level {
+                        self.env = self.env.remove_env_at_level(level).ok_or(
+                            RuntimeErr::Other(format!(
+                                "Tried to pop env level {} but not enough levels exist",
+                                level,
+                            ))
+                        )?;
+                    } else {
+                        self.env = std::mem::replace(&mut self.env.outer,
+                                                      Some(GcRefMut::false_ref())).unwrap();
                     }
-                    let id = self.env.outer.ok_or(
-                        RuntimeErr::Other("Expected environment".to_string())
-                    )?;
-                    self.env = self.env_gc.take(id).ok_or(
-                        RuntimeErr::Other(format!("Expected env ref {}", id))
-                    )?;
                 }
                 Instruction::PushEnv(names) => {
                     let mut map = HashMap::new();
@@ -161,8 +177,11 @@ impl Runtime {
                         let val = pop_or(&mut data_stack)?;
                         map.insert(name, val);
                     }
-                    let old_env = std::mem::replace(&mut self.env, Env::new(None));
-                    self.env = old_env.integrate_hashmap(&mut self.env_gc, map);
+                    let old_env = std::mem::replace(&mut self.env, GcRefMut::false_ref());
+                    self.env = Env {
+                        map,
+                        outer: Some(old_env),
+                    }.to_ref_mut(&mut self.env_gc);
                 }
                 Instruction::Set(s) => { 
                     let data = pop_or(&mut data_stack)?;
@@ -174,21 +193,24 @@ impl Runtime {
                     for _ in 0..n {
                         res.push(pop_or(&mut data_stack)?);
                     }
-                    data_stack.push(self.gc.ponga_into_gc_ref(Ponga::Array(res)));
+                    let gc_id = self.gc.add(Ponga::Array(res));
+                    data_stack.push(Ponga::Ref(gc_id));
                 }
                 Instruction::CollectList(n) => {
                     let mut res = LinkedList::new();
                     for _ in 0..n {
                         res.push_back(pop_or(&mut data_stack)?);
                     }
-                    data_stack.push(self.gc.ponga_into_gc_ref(Ponga::List(res)));
+                    let gc_id = self.gc.add(Ponga::List(res));
+                    data_stack.push(Ponga::Ref(gc_id));
                 }
                 Instruction::CollectObject(strings) => {
                     let mut res = HashMap::new();
                     for name in strings.into_iter() {
                         res.insert(name, pop_or(&mut data_stack)?);
                     }
-                    data_stack.push(self.gc.ponga_into_gc_ref(Ponga::Object(res)));
+                    let gc_id = self.gc.add(Ponga::Object(res));
+                    data_stack.push(Ponga::Ref(gc_id));
                 }
                 Instruction::Call(num_args) => {
                     let mut args = Vec::new();
@@ -209,44 +231,52 @@ impl Runtime {
                             data_stack.push(FUNCS[id].1(self, args)?);
                         }
                         CFunc(args_names, sexpr_id, state_id) => {
-                            ins_stack.push(Instruction::PopEnv(Some(state_id)));
-                            ins_stack.push(Instruction::PopEnv(None));
-
-                            // Push S-Expr to be evaluated
-                            let sexpr_obj = self.get_id_obj_ref(sexpr_id)?;
-                            let sexpr = sexpr_obj.borrow().unwrap().clone();
-                            ins_stack.push(Instruction::Eval(sexpr));
-
-                            let state_obj = self.env_gc.take(state_id).unwrap();
-                            let state_map = state_obj.map;
-
-                            // Push the state
-                            let old_env = std::mem::replace(&mut self.env, Env::new(None));
-                            self.env = old_env.integrate_hashmap(&mut self.env_gc, state_map);
+                            let mut state_obj = self.env_gc
+                                                    .get_mut(state_id)
+                                                    .unwrap_or({
+                                let id = self.env_gc.add(Env::new(None));
+                                self.env_gc.get_mut(id).unwrap()
+                            });
+                            let old_env = std::mem::replace(&mut self.env,
+                                                            GcRefMut::false_ref());
+                            let level = state_obj.add_env_furthest(old_env);
 
                             // Push all of the names and arg values
                             let args_map = args_names.iter()
                                                      .cloned()
                                                      .zip(args.into_iter())
                                                      .collect();
-                            let old_env = std::mem::replace(&mut self.env, Env::new(None));
-                            self.env = old_env.integrate_hashmap(&mut self.env_gc, args_map);
+
+                            self.env = Env {
+                                map: args_map,
+                                outer: Some(state_obj),
+                            }.to_ref_mut(&mut self.env_gc);
+
+                            ins_stack.push(Instruction::PopEnv(Some(level)));
+
+                            // Push S-Expr to be evaluated
+                            let sexpr_obj = self.get_id_obj_ref(sexpr_id)?;
+                            ins_stack.push(Instruction::Eval(sexpr_obj.as_ref().clone()));
                         } 
                         MFunc(args_names, sexpr_id) => {
                             ins_stack.push(Instruction::PopEnv(None));
 
                             // Push all of the names and arg values
                             let args_map = args_names.iter()
-                                                     .rev()
                                                      .cloned()
+                                                     .rev()
                                                      .zip(args.into_iter())
                                                      .collect();
-                            let old_env = std::mem::replace(&mut self.env, Env::new(None));
-                            self.env = old_env.integrate_hashmap(&mut self.env_gc, args_map);
+
+                            let old_env = std::mem::replace(&mut self.env,
+                                                            GcRefMut::false_ref());
+                            self.env = Env {
+                                map: args_map,
+                                outer: Some(old_env),
+                            }.to_ref_mut(&mut self.env_gc);
 
                             // Push S-Expr to be evaluated
-                            let sexpr_obj = self.get_id_obj_ref(sexpr_id)?;
-                            let sexpr = sexpr_obj.borrow().unwrap().clone();
+                            let sexpr = self.get_id_obj_ref(sexpr_id)?.as_ref().clone();
 
                             ins_stack.push(Instruction::Eval(sexpr));
                         }
@@ -290,17 +320,14 @@ match func {
                 ));
             }
             // Can make this better if we push it later but should be fine for now
-            //println!("iter: {:?}", iter);
             let cond = self.id_or_ref_peval(iter.next().unwrap())?;
             let cond = self.eval(cond)?;
-            //println!("cond: {}", cond);
             let val = if cond != Ponga::False {
                 iter.nth(0).unwrap()
             } else {
                 iter.nth(1).unwrap()
             };
             ins_stack.push(Instruction::Eval(val));
-            continue;
         }
         "$PRINT_RAW" => {
             if iter.len() != 1 {
@@ -308,9 +335,8 @@ match func {
                     "$PRINT_RAW must have one argument".to_string()
                 ));
             }
-            println!("{}", iter.next().unwrap().deep_copy(&self));
+            println!("{:?}", self.id_or_ref_peval(iter.next().unwrap())?);
             data_stack.push(Ponga::Null);
-            continue;
         }
         "copy" => {
             if iter.len() != 1 {
@@ -320,7 +346,6 @@ match func {
             }
             let val = iter.next().unwrap().deep_copy(&self);
             data_stack.push(val);
-            continue;
         }
         "$EVAL" | "eval" => {
             if iter.len() != 1 {
@@ -330,7 +355,6 @@ match func {
             }
             let val = iter.next().unwrap().deep_copy(&self);
             ins_stack.push(Instruction::Eval(val));
-            continue;
         }
         "$FLIP"
         | "code<->data"
@@ -350,7 +374,6 @@ match func {
                 val => val,
             };
             data_stack.push(val.flip_code_vals(&self));
-            continue;
         }
         "$FLIP-EVAL"
         | "code<->data.eval"
@@ -362,7 +385,6 @@ match func {
             }
             let val = iter.next().unwrap();
             ins_stack.push(Instruction::Eval(val.flip_code_vals(&self)));
-            continue;
         }
         "$EVAL-FLIP-EVAL"
         | "eval.code<->data.eval"
@@ -374,7 +396,6 @@ match func {
             }
             let val = self.eval(iter.next().unwrap())?;
             ins_stack.push(Instruction::Eval(val.flip_code_vals(&self)));
-            continue;
         }
         "quote" => {
             if iter.len() != 1 {
@@ -440,7 +461,6 @@ match func {
 
 
             data_stack.push(CFunc(cargs, body_id, state_id));
-            continue;
         }
         "open-lambda" => {
             if iter.len() != 2 {
@@ -476,7 +496,6 @@ match func {
 
 
             data_stack.push(CFunc(cargs, body_id, state_id));
-            continue;
         }
         "mac" => {
             if iter.len() != 2 {
@@ -509,7 +528,6 @@ match func {
             let body_id = self.gc.add(body);
 
             data_stack.push(MFunc(cargs, body_id));
-            continue;
         }
         "begin" => {
             if iter.len() < 1 {
@@ -524,7 +542,6 @@ match func {
                 ins_stack.push(Instruction::PopStack);
                 ins_stack.push(Instruction::Eval(i));
             }
-            continue;
         }
         "deref" => {
             if iter.len() != 1 {
@@ -549,7 +566,6 @@ match func {
                 ))),
             }?;
             data_stack.push(deref);
-            continue;
         }
         "let-deref" => {
             if iter.len() < 2 {
@@ -678,7 +694,6 @@ match func {
             if name.is_identifier() {
                 ins_stack.push(Instruction::Define(name.extract_name()?));
                 ins_stack.push(Instruction::Eval(val));
-                continue;
             } else if name.is_sexpr() {
                 let v = name.get_array()?;
                 if v.len() < 1 {
@@ -699,7 +714,6 @@ match func {
                                            Sexpr(other_args),
                                            val]);
                 ins_stack.push(Instruction::Eval(new_sexpr));
-                continue;
             } else {
                 return Err(RuntimeErr::Other(
                     "define first argument must be an identifier or
@@ -736,7 +750,6 @@ match func {
                                            Sexpr(other_args),
                                            val]);
                 ins_stack.push(Instruction::Eval(new_sexpr));
-                continue;
             } else {
                 return Err(RuntimeErr::Other(
                     "define first argument must be an identifier or
@@ -761,7 +774,6 @@ match func {
 
             ins_stack.push(Instruction::Set(name.extract_name()?));
             ins_stack.push(Instruction::Eval(val));
-            continue;
         }
         "set-deref!" => {
             if iter.len() != 2 {
@@ -788,7 +800,6 @@ match func {
 
             ins_stack.push(Instruction::Set(name));
             ins_stack.push(Instruction::Eval(val));
-            continue;
         }
         other => {
             let ref_obj = self.get_identifier_obj_ref(other)?;
@@ -807,7 +818,6 @@ match func {
                         ins_stack.push(Instruction::Eval(arg));
                     }
                 }
-                continue;
             } else {
                 return Err(RuntimeErr::TypeError(
                     format!("Expected function, received {:?}", ref_obj)
@@ -822,7 +832,6 @@ match func {
             ins_stack.push(Instruction::Eval(arg));
         }
         data_stack.push(cfunc);
-        continue;
     }
     mfunc@MFunc(_, _) => {
         let n_args = iter.len();
@@ -832,7 +841,6 @@ match func {
             data_stack.push(val);
         }
         data_stack.push(mfunc);
-        continue;
     }
     hfunc@HFunc(_) => {
         let n_args = iter.len();
@@ -841,7 +849,6 @@ match func {
             ins_stack.push(Instruction::Eval(arg));
         }
         data_stack.push(hfunc);
-        continue;
     }
     sexpr@Sexpr(_) => {
         // Evaluate the first arg and then call
@@ -851,7 +858,6 @@ match func {
             ins_stack.push(Instruction::Eval(arg));
         }
         ins_stack.push(Instruction::Eval(sexpr));
-        continue;
     }
     _ => return Err(RuntimeErr::TypeError(
         format!("Expected function, received {:?}", func)
@@ -889,8 +895,7 @@ match func {
                 f.is_func()
             }
             Ponga::Ref(id) => {
-                let obj = self.get_id_obj_ref(*id).unwrap().borrow().unwrap();
-                obj.inner().is_func()
+                self.get_id_obj_ref(*id).unwrap().is_func()
             }
             _ => false,
         }
@@ -904,8 +909,7 @@ match func {
                 self.is_list(f)
             }
             Ponga::Ref(id) => {
-                let obj = self.get_id_obj_ref(*id).unwrap().borrow().unwrap();
-                obj.inner().is_list()
+                self.get_id_obj_ref(*id).unwrap().is_list()
             }
             _ => false,
         }
@@ -919,8 +923,7 @@ match func {
                 self.is_vector(f)
             }
             Ponga::Ref(id) => {
-                let obj = self.get_id_obj_ref(*id).unwrap().borrow().unwrap();
-                obj.inner().is_vector()
+                self.get_id_obj_ref(*id).unwrap().is_vector()
             }
             _ => false,
         }
@@ -934,8 +937,7 @@ match func {
                 self.is_char(f)
             }
             Ponga::Ref(id) => {
-                let obj = self.get_id_obj_ref(*id).unwrap().borrow().unwrap();
-                obj.inner().is_char()
+                self.get_id_obj_ref(*id).unwrap().is_char()
             }
             _ => false,
         }
@@ -949,8 +951,7 @@ match func {
                 self.is_number(f)
             }
             Ponga::Ref(id) => {
-                let obj = self.get_id_obj_ref(*id).unwrap().borrow().unwrap();
-                obj.inner().is_number()
+                self.get_id_obj_ref(*id).unwrap().is_number()
             }
             _ => false,
         }
@@ -964,8 +965,7 @@ match func {
                 self.is_string(f)
             }
             Ponga::Ref(id) => {
-                let obj = self.get_id_obj_ref(*id).unwrap().borrow().unwrap();
-                obj.inner().is_string()
+                self.get_id_obj_ref(*id).unwrap().is_string()
             }
             _ => false,
         }
@@ -979,8 +979,7 @@ match func {
                 self.is_symbol(f)
             }
             Ponga::Ref(id) => {
-                let obj = self.get_id_obj_ref(*id).unwrap().borrow().unwrap();
-                obj.inner().is_symbol()
+                self.get_id_obj_ref(*id).unwrap().is_symbol()
             }
             _ => false,
         }
@@ -997,11 +996,8 @@ match func {
             Ponga::Symbol(_) => format!("'{}", ponga),
             Ponga::HFunc(id) => format!("{}", FUNCS[*id].0),
             Ponga::CFunc(args, _, stateid) => {
-                let obj = self.get_id_obj_ref(*stateid).unwrap();
-                let obj_ref = obj.borrow().unwrap();
-                let state = obj_ref.inner();
-                let state_str = self.ponga_to_string_no_id(state);
-                format!("Compound function with args {:#?}, state {}", args, state_str)
+                let obj = self.env_gc.get(*stateid);
+                format!("Compound function with args {:#?}, state {:?}", args, obj)
             }
             Ponga::MFunc(args, _) => {
                 format!("Macro with args {:#?}", args)
@@ -1017,8 +1013,11 @@ match func {
                 self.ponga_to_string(obj)
             }
             Ponga::Ref(id) => {
-                let obj = self.get_id_obj_ref(*id).unwrap().borrow().unwrap();
-                self.ponga_to_string(obj.inner())
+                let obj = self.get_id_obj_ref(*id);
+                match obj {
+                    Ok(val) => self.ponga_to_string(val.as_ref()),
+                    Err(_) => format!("Ref({})", id),
+                }
             }
             Ponga::Object(o) => {
                 format!(
@@ -1048,11 +1047,8 @@ match func {
             Ponga::Symbol(_) => format!("'{}", ponga),
             Ponga::HFunc(id) => format!("{}", FUNCS[*id].0),
             Ponga::CFunc(args, _, stateid) => {
-                let obj = self.get_id_obj_ref(*stateid).unwrap();
-                let obj_ref = obj.borrow().unwrap();
-                let state = obj_ref.inner();
-                let state_str = self.ponga_to_string_no_id(state);
-                format!("Compound function with args {:#?}, state {}", args, state_str)
+                let obj = self.env_gc.get(*stateid).unwrap();
+                format!("Compound function with args {:#?}, state {:?}", args, obj)
             }
             Ponga::MFunc(args, _) => {
                 format!("Macro with args {:#?}", args)
@@ -1062,8 +1058,8 @@ match func {
                 format!("{}", s)
             }
             Ponga::Ref(id) => {
-                let obj = self.get_id_obj_ref(*id).unwrap().borrow().unwrap();
-                self.ponga_to_string_no_id(obj.inner())
+                let obj = self.get_id_obj_ref(*id).unwrap();
+                self.ponga_to_string_no_id(obj.as_ref())
             }
             Ponga::Object(o) => {
                 format!(

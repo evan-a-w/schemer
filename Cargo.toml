@@ -9,3 +9,4 @@ edition = "2021"
 nom = "7.1.0"
 num-traits = "0.2.14"
 itertools = "0.8.0"
+gc_rs = { git = "https://github.com/evan-a-w/gc_rs" }

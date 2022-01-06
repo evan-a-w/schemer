@@ -1,6 +1,0 @@
-preprocess:
-
-(defmacro (name arg1 arg2 ...)
-    (let ((x lambda (y) (+ y 1)))
-        '('car arg1)
-        arg2))

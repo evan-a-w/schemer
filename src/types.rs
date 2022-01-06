@@ -1,7 +1,10 @@
 use crate::number::*;
 use crate::runtime::Runtime;
+use crate::env::Env;
 use std::collections::HashMap;
 use std::collections::LinkedList;
+use gc_rs::gc::*;
+use gc_rs::gc_ref::*;
 
 pub type Id = usize;
 
@@ -232,8 +235,7 @@ impl Ponga {
             Ponga::Symbol(s) => Ponga::Identifier(s),
             Ponga::Identifier(s) => Ponga::Symbol(s),
             Ponga::Ref(id) => {
-                let obj = runtime.get_id_obj_ref(id).unwrap();
-                let cloned = obj.borrow().unwrap().clone();
+                let cloned = runtime.get_id_obj_ref(id).unwrap().as_ref().clone();
                 cloned.flip_code_vals(runtime)
             }
             _ => self,
@@ -250,8 +252,7 @@ impl Ponga {
                 r.clone()
             }
             Ponga::Ref(id) => {
-                let obj = runtime.get_id_obj_ref(id).unwrap();
-                obj.borrow().unwrap().clone()
+                runtime.get_id_obj_ref(id).unwrap().as_ref().clone()
             }
             _ => self,
         }
@@ -329,3 +330,63 @@ impl std::fmt::Display for Ponga {
     }
 }
 
+impl Trace<Ponga> for Ponga {
+    fn trace(&self, gc: &Gc<Ponga>) {
+        match self {
+            Ponga::Ref(id) => {
+                gc.ptrs.get(id).unwrap().trace(gc);
+            }
+            Ponga::Array(arr) => {
+                for v in arr.iter() {
+                    v.trace(gc);
+                }
+            }
+            Ponga::List(l) => {
+                for v in l.iter() {
+                    v.trace(gc);
+                }
+            }
+            Ponga::Object(o) => {
+                for v in o.values() {
+                    v.trace(gc);
+                }
+            }
+            Ponga::CFunc(_, sexpr_id, _) => {
+                gc.ptrs.get(sexpr_id).unwrap().trace(gc);
+            }
+            _ => (),
+        }
+    }
+}
+
+impl Trace<Env> for Ponga {
+    fn trace(&self, gc: &Gc<Env>) {
+        match self {
+            Ponga::Ref(id) => {
+                match gc.get(*id) {
+                    Some(v) => v.trace(gc),
+                    None => (),
+                }
+            }
+            Ponga::Array(arr) => {
+                for v in arr.iter() {
+                    v.trace(gc);
+                }
+            }
+            Ponga::List(l) => {
+                for v in l.iter() {
+                    v.trace(gc);
+                }
+            }
+            Ponga::Object(o) => {
+                for v in o.values() {
+                    v.trace(gc);
+                }
+            }
+            Ponga::CFunc(_, _, state_id) => {
+                gc.ptrs.get(state_id).unwrap().trace(gc);
+            }
+            _ => (),
+        }
+    }
+}

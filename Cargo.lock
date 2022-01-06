@@ -15,6 +15,11 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e78d4f1cc4ae33bbfc157ed5d5a5ef3bc29227303d595861deb238fcec4e9457"
 
 [[package]]
+name = "gc_rs"
+version = "0.1.0"
+source = "git+https://github.com/evan-a-w/gc_rs#f5069bcfbc023d5a1811180897ddaa8135ada4cc"
+
+[[package]]
 name = "itertools"
 version = "0.8.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -59,6 +64,7 @@ dependencies = [
 name = "pongascript"
 version = "0.1.0"
 dependencies = [
+ "gc_rs",
  "itertools",
  "nom",
  "num-traits",
@@ -66,6 +72,6 @@ dependencies = [
 
 [[package]]
 name = "version_check"
-version = "0.9.3"
+version = "0.9.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5fecdca9a5291cc2b8dcf7dc02453fee791a280f3743cb0905f8822ae463b3fe"
+checksum = "49874b5167b65d7193b8aba1567f5c7d93d001cafc34600cee003eda787e483f"
