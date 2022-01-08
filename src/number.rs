@@ -1,6 +1,7 @@
 use crate::ratio::*;
+use gc_rs::Trace;
 
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Trace)]
 pub enum Number {
     Int(isize),
     Float(f64),

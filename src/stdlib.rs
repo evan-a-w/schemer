@@ -3,8 +3,16 @@ use crate::types::*;
 use crate::number::*;
 use std::collections::LinkedList;
 use std::collections::HashMap;
-use gc_rs::gc::*;
-use gc_rs::gc_ref::*;
+use gc_rs::{Gc, GcRefMut};
+
+pub const KEYWORDS: &[&str] = &[
+    "true",
+    "false",
+    "if",
+    "let",
+    "define",
+    "lambda",
+];
 
 pub const FUNCS: &[(&str, fn(&mut Runtime, Vec<Ponga>) -> RunRes<Ponga>)] = &[
     ("cons", cons),
@@ -93,18 +101,11 @@ pub fn cons(runtime: &mut Runtime, mut args: Vec<Ponga>) -> RunRes<Ponga> {
     let first = args.pop().unwrap();
     match snd {
         Ponga::Ref(id) => {
-            let mut taken_obj =
-                runtime
-                    .gc
-                    .take(id)
-                    .ok_or(RuntimeErr::ReferenceError(format!(
-                        "Reference {} not found",
-                        id
-                    )))?;
-            if taken_obj.is_list() {
-                let list = taken_obj.get_list()?;
+            if id.is_list() {
+                let mut_id = id.borrow_mut().unwrap();
+                let list = mut_id.get_list()?;
                 list.push_front(first);
-                runtime.gc.add_id(taken_obj, id);
+                drop(mut_id);
                 Ok(Ponga::Ref(id))
             } else {
                 let id = runtime.gc.add(
@@ -130,15 +131,14 @@ pub fn null(runtime: &mut Runtime, mut args: Vec<Ponga>) -> RunRes<Ponga> {
         Ponga::List(list) => Ok(bool_to_ponga(list.is_empty())),
         Ponga::Null => Ok(Ponga::True),
         Ponga::Ref(id) => {
-            let mut r = runtime.get_id_obj(id)?;
-            match r.as_mut() {
+            match *id.borrow_mut().unwrap() {
                 Ponga::List(list) => {
                     let res = bool_to_ponga(list.is_empty());
                     Ok(res)
                 }
                 Ponga::Null => Ok(Ponga::True),
                 _ => Err(RuntimeErr::TypeError(format!(
-                    "null? requires a list or null (not {:?})", r
+                    "null? requires a list or null (not {:?})", id
                 ))),
             }
         }

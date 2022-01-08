@@ -1,8 +1,9 @@
 use num_traits::Num;
 use std::cmp::{Eq, Ord, Ordering, PartialEq, PartialOrd};
 use std::ops::{Add, Div, Mul, Sub};
+use gc_rs::Trace;
 
-#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Trace)]
 pub struct Ratio<T: Num + Ord + Copy> {
     pub numerator: T,
     pub denominator: T,

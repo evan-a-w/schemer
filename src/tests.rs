@@ -340,8 +340,6 @@ pub fn test_super_basic_run() {
         .collect::<Vec<RunRes<Ponga>>>();
     println!("{:?}", evald);
     assert!(evald[2] == Ok(Ponga::True));
-
-    runtime.collect_garbage();
 }
 
 #[test]
@@ -367,7 +365,7 @@ pub fn test_basic_run() {
     println!("{:?}", evald);
     assert!(evald[4] == Ok(Ponga::True));
 
-    runtime.collect_garbage();
+
 }
 
 #[test]
@@ -437,7 +435,7 @@ pub fn test_vec_to_list() {
     println!("{:?}", evald);
     assert!(evald[3] == Ok(Ponga::True));
 
-    runtime.collect_garbage();
+
 }
 
 #[test]
@@ -461,7 +459,7 @@ pub fn test_list_to_vec() {
     println!("{:?}", evald);
     assert!(evald[3] == Ok(Ponga::True));
 
-    runtime.collect_garbage();
+
 }
 
 #[test]
@@ -534,35 +532,4 @@ curr
     let mut prog_res = run_str(program).unwrap();
     let res = prog_res.pop().unwrap().unwrap();
     assert!(res == Ponga::Number(Number::Int(6857)));
-}
-
-#[test]
-pub fn test_env_condense() {
-    let mut env_gc = Gc::new();
-    let mut env = Env::new(None);
-    env.map.insert("First".to_string(), Ponga::Number(Number::Int(1)));
-    env.map.insert("Second".to_string(),
-                   Ponga::List([0, 1, 2].into_iter()
-                                        .map(|x| Ponga::Number(Number::Int(x)))
-                                        .collect()));
-    let first_id = env_gc.add(env);
-    let env_ref = env_gc.get_mut(first_id).unwrap();
-    let mut second_env = Env::new(Some(env_ref));
-    second_env.map.insert("First".to_string(), Ponga::String("First".to_string()));
-    second_env.map.insert("third".to_string(),
-                   Ponga::List([69, 42, 1].into_iter()
-                                          .map(|x| Ponga::Number(Number::Int(x)))
-                                          .collect()));
-    let right_map = [
-        ("First".to_string(), Ponga::String("First".to_string())),
-        ("Second".to_string(),
-         Ponga::List([0, 1, 2].into_iter()
-                              .map(|x| Ponga::Number(Number::Int(x)))
-                              .collect())),
-        ("third".to_string(),
-         Ponga::List([69, 42, 1].into_iter()
-                                .map(|x| Ponga::Number(Number::Int(x)))
-                                .collect())),
-    ].into_iter().collect();
-    assert_eq!(second_env.copy(&env_gc).map, right_map);
 }

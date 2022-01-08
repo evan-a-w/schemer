@@ -3,14 +3,27 @@ use crate::runtime::Runtime;
 use crate::env::Env;
 use std::collections::HashMap;
 use std::collections::LinkedList;
-use gc_rs::gc::*;
-use gc_rs::gc_ref::*;
+use gc_rs::{Gc, Trace};
 
 pub type Id = usize;
 
 pub type FuncId = usize;
 
-#[derive(Debug, Clone, PartialEq)]
+pub enum Types {
+    Number,
+    String,
+    Boolean,
+    Function,
+    Vector,
+    Object,
+    Null,
+    Char,
+    Symbol,
+    Any,
+    Iterable,
+}
+
+#[derive(Debug, PartialEq, Clone, Trace)]
 pub enum Ponga {
     Null,
     Number(Number),
@@ -22,12 +35,12 @@ pub enum Ponga {
     Object(HashMap<String, Ponga>),
     Array(Vec<Ponga>),
     Sexpr(Vec<Ponga>),
-    CFunc(Vec<String>, Id, Id), // args, sexpr_id, state_id
-    MFunc(Vec<String>, Id),
+    CFunc(Vec<String>, Gc<Ponga>, Gc<Env>), // args, sexpr_id, state_id
+    MFunc(Vec<String>, Gc<Ponga>),
     HFunc(FuncId),
     True,
     False,
-    Ref(Id),
+    Ref(Gc<Ponga>),
 }
 
 impl Ponga {
@@ -241,22 +254,6 @@ impl Ponga {
             _ => self,
         }
     }
-
-    pub fn deep_copy(self, runtime: &Runtime) -> Ponga {
-        match self {
-            Ponga::Identifier(s) => {
-                let r = match runtime.get_identifier_obj_ref(&s) {
-                    Ok(v) => v,
-                    Err(_) => return Ponga::Identifier(s),
-                };
-                r.clone()
-            }
-            Ponga::Ref(id) => {
-                runtime.get_id_obj_ref(id).unwrap().as_ref().clone()
-            }
-            _ => self,
-        }
-    }
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -323,70 +320,9 @@ impl std::fmt::Display for Ponga {
             Ponga::CFunc(args, _, state) => write!(f, "Compound function with args {:?} and state {:?}", args, state),
             Ponga::MFunc(args, _) => write!(f, "Macro with args {:?}", args),
             Ponga::Sexpr(a) => write!(f, "S-expression {:?}", a),
-            Ponga::Identifier(s) => write!(f, "Identifier {}", s),
-            Ponga::Ref(id) => write!(f, "Ref {}", id),
+            Ponga::Identifier(s) => write!(f, "{}", s),
+            Ponga::Ref(obj) => write!(f, "{}", obj),
             Ponga::Object(o) => write!(f, "{:?}", o),
-        }
-    }
-}
-
-impl Trace<Ponga> for Ponga {
-    fn trace(&self, gc: &Gc<Ponga>) {
-        match self {
-            Ponga::Ref(id) => {
-                gc.ptrs.get(id).unwrap().trace(gc);
-            }
-            Ponga::Array(arr) => {
-                for v in arr.iter() {
-                    v.trace(gc);
-                }
-            }
-            Ponga::List(l) => {
-                for v in l.iter() {
-                    v.trace(gc);
-                }
-            }
-            Ponga::Object(o) => {
-                for v in o.values() {
-                    v.trace(gc);
-                }
-            }
-            Ponga::CFunc(_, sexpr_id, _) => {
-                gc.ptrs.get(sexpr_id).unwrap().trace(gc);
-            }
-            _ => (),
-        }
-    }
-}
-
-impl Trace<Env> for Ponga {
-    fn trace(&self, gc: &Gc<Env>) {
-        match self {
-            Ponga::Ref(id) => {
-                match gc.get(*id) {
-                    Some(v) => v.trace(gc),
-                    None => (),
-                }
-            }
-            Ponga::Array(arr) => {
-                for v in arr.iter() {
-                    v.trace(gc);
-                }
-            }
-            Ponga::List(l) => {
-                for v in l.iter() {
-                    v.trace(gc);
-                }
-            }
-            Ponga::Object(o) => {
-                for v in o.values() {
-                    v.trace(gc);
-                }
-            }
-            Ponga::CFunc(_, _, state_id) => {
-                gc.ptrs.get(state_id).unwrap().trace(gc);
-            }
-            _ => (),
         }
     }
 }

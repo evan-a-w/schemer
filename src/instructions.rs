@@ -2,16 +2,16 @@ use crate::types::*;
 
 #[derive(Clone, Debug)]
 pub enum Instruction {
-    Eval(Ponga),
-    Call(usize),
-    PopEnv(Option<usize>),
+    PopEnv,
     PushEnv(Vec<String>),
+    PopStack,
     Define(String),
     Set(String),
     CollectArray(usize),
     CollectObject(Vec<String>),
     CollectList(usize),
-    PopStack,
+    Call(usize),
+    Eval(Ponga),
 }
 
 impl std::fmt::Display for Instruction {
@@ -19,7 +19,7 @@ impl std::fmt::Display for Instruction {
         match self {
             Instruction::Eval(ponga) => write!(f, "eval {}", ponga),
             Instruction::Call(n) => write!(f, "call {}", n),
-            Instruction::PopEnv(_) => write!(f, "pop_env"),
+            Instruction::PopEnv => write!(f, "pop_env"),
             Instruction::PushEnv(_) => write!(f, "push_env"),
             Instruction::Define(name) => write!(f, "define {}", name),
             Instruction::Set(name) => write!(f, "set {}", name),
