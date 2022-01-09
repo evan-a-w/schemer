@@ -1,9 +1,11 @@
 use crate::number::*;
 use crate::runtime::Runtime;
 use crate::env::Env;
+use crate::stdlib::FUNCS;
 use std::collections::HashMap;
 use std::collections::LinkedList;
 use gc_rs::{Gc, Trace};
+use itertools::Itertools;
 
 pub type Id = usize;
 
@@ -23,7 +25,7 @@ pub enum Types {
     Iterable,
 }
 
-#[derive(Debug, PartialEq, Clone, Trace)]
+#[derive(Debug, PartialEq, Clone)]
 pub enum Ponga {
     Null,
     Number(Number),
@@ -41,6 +43,77 @@ pub enum Ponga {
     True,
     False,
     Ref(Gc<Ponga>),
+}
+
+impl Trace for Ponga {
+    fn trace(&self) {
+        match self {
+            Ponga::Array(a) => {
+                for v in a {
+                    v.trace();
+                }
+            }
+            Ponga::List(a) => {
+                for v in a {
+                    v.trace();
+                }
+            }
+            Ponga::Object(a) => {
+                for v in a.values() {
+                    v.trace();
+                }
+            }
+            Ponga::Ref(id) => {
+                id.trace();
+            }
+            _ => {}
+        }
+    }
+
+    fn root(&self) {
+        match self {
+            Ponga::Ref(id) => id.root(),
+            _ => {},
+        }
+    }
+
+    fn deroot(&self) {
+        match self {
+            Ponga::Ref(id) => id.deroot(),
+            _ => {},
+        }
+    }
+
+    fn root_children(&self) {
+        match self {
+            Ponga::Array(a) => {
+                for v in a {
+                    v.root_children();
+                }
+            }
+            Ponga::List(a) => {
+                for v in a {
+                    v.root_children();
+                }
+            }
+            Ponga::Object(a) => {
+                for v in a.values() {
+                    v.root_children();
+                }
+            }
+            Ponga::Ref(id) => {
+                id.root_children();
+            }
+            _ => {}
+        }
+    }
+
+    fn deroot_children(&self) {
+        match self {
+            Ponga::Ref(id) => id.deroot_children(),
+            _ => {}
+        }
+    }
 }
 
 impl Ponga {
@@ -237,21 +310,72 @@ impl Ponga {
         }
     }
 
-    pub fn flip_code_vals(self, runtime: &Runtime) -> Ponga {
+    pub fn flip_code_vals(self, runtime: &mut Runtime) -> Ponga {
         match self {
             Ponga::List(l) => Ponga::Sexpr(l.into_iter()
-                                            .map(|v| v.flip_code_vals(runtime)
-                                          ).collect()),
+                                            .map(|v| v.flip_code_vals(runtime))
+                                            .collect()),
             Ponga::Sexpr(p) => Ponga::List(p.into_iter()
-                                            .map(|v| v.flip_code_vals(runtime)
-                                          ).collect()),
+                                            .map(|v| v.flip_code_vals(runtime))
+                                            .collect()),
             Ponga::Symbol(s) => Ponga::Identifier(s),
             Ponga::Identifier(s) => Ponga::Symbol(s),
-            Ponga::Ref(id) => {
-                let cloned = runtime.get_id_obj_ref(id).unwrap().as_ref().clone();
+            r@Ponga::Ref(_) => {
+                let cloned = runtime.id_or_ref_peval(r).unwrap();
                 cloned.flip_code_vals(runtime)
             }
             _ => self,
+        }
+    }
+
+    pub fn extract_names_from_vec(p: Vec<Ponga>) -> RunRes<Vec<String>> {
+        let mut vec = Vec::with_capacity(p.len());
+        for pong in p {
+            match pong {
+                Ponga::Identifier(s) => vec.push(s),
+                _ => return Err(RuntimeErr::TypeError(format!(
+                    "Expected identifier, received {:?}", pong)
+                )),
+            }
+        }
+        Ok(vec)
+    }
+
+    pub fn extract_names_from_sexpr(self) -> RunRes<Vec<String>> {
+        match self {
+            Ponga::Sexpr(p) => {
+                Self::extract_names_from_vec(p)
+            }
+            _ => Err(RuntimeErr::TypeError(format!("Expected sexpr, received {:?}", self))),
+        }
+    }
+
+    pub fn extract_names_vals_from_sexpr(self) -> RunRes<Vec<(String, Ponga)>> {
+        match self {
+            Ponga::Sexpr(p) => {
+                let mut vec = Vec::with_capacity(p.len());
+                for pong in p {
+                    match pong {
+                        Ponga::Sexpr(v) => {
+                            if v.len() != 2 {
+                                return Err(RuntimeErr::TypeError(format!(
+                                    "Expected sexpr of length 2, received {:?}",
+                                    Ponga::Sexpr(v)
+                                )))
+                            }
+                            let mut iter = v.into_iter();
+                            let name = iter.next().unwrap().extract_name()?;
+                            let value = iter.next().unwrap();
+                            vec.push((name, value))
+                        }
+                        _ => return Err(RuntimeErr::TypeError(format!(
+                            "Expected identifier, received {:?}", pong)
+                        )),
+                    }
+                }
+                Ok(vec)
+            }
+            _ => Err(RuntimeErr::TypeError(format!("Expected sexpr, received {:?}", self))),
         }
     }
 }
@@ -314,12 +438,15 @@ impl std::fmt::Display for Ponga {
             Ponga::Char(c) => write!(f, "#\\{}", c),
             Ponga::Null => write!(f, "'()"),
             Ponga::Symbol(s) => write!(f, "{}", s),
-            Ponga::Array(arr) => write!(f, "{:?}", arr),
-            Ponga::List(l) => write!(f, "{:?}", l),
-            Ponga::HFunc(id) => write!(f, "Internal function with id {}", id),
-            Ponga::CFunc(args, _, state) => write!(f, "Compound function with args {:?} and state {:?}", args, state),
+            Ponga::Array(arr) => write!(f, "#({})", arr.iter().format(" ")),
+            Ponga::List(l) => write!(f, "'({})", l.iter().format(" ")),
+            Ponga::HFunc(id) => write!(f, "{}", FUNCS[*id].0),
+            Ponga::CFunc(args, sexpr, _) => {
+                write!(f, "CFunc([{}],\n      {})",
+                       args.iter().format(" "), sexpr)
+            }
             Ponga::MFunc(args, _) => write!(f, "Macro with args {:?}", args),
-            Ponga::Sexpr(a) => write!(f, "S-expression {:?}", a),
+            Ponga::Sexpr(arr) => write!(f, "({})", arr.iter().format(" ")),
             Ponga::Identifier(s) => write!(f, "{}", s),
             Ponga::Ref(obj) => write!(f, "{}", obj),
             Ponga::Object(o) => write!(f, "{:?}", o),

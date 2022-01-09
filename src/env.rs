@@ -7,6 +7,7 @@ use gc_rs::{Gc, Trace};
 pub struct Env {
     pub map: HashMap<String, Ponga>,
     pub outer: Option<Gc<Env>>,
+    pub in_use: bool,
 }
 
 impl Env {
@@ -14,22 +15,26 @@ impl Env {
         Env {
             map: HashMap::new(),
             outer,
+            in_use: true,
         }
     }
 
     pub fn pop(self) -> Gc<Env> {
-        self.outer.unwrap()
+        let res = self.outer.unwrap();
+        res.root();
+        res
     }
 
     pub fn from_map(map: HashMap<String, Ponga>) -> Self {
         Env {
             map,
             outer: None,
+            in_use: true,
         }
     }
 
-    pub fn copy(&self, gc: &Gc<Env>) -> Self {
-        self.copy_rec(gc, HashMap::new())
+    pub fn copy(&self) -> HashMap<String, Ponga> {
+        self.copy_rec(HashMap::new())
     }
 
     fn merge(mut a: HashMap<String, Ponga>, b: HashMap<String, Ponga>) -> HashMap<String, Ponga> {
@@ -39,15 +44,15 @@ impl Env {
         a
     }
 
-    fn copy_rec(&self, gc: &Gc<Env>, curr: HashMap<String, Ponga>) -> Self {
-        let merged = Self::merge(curr, self.map.clone());
+    fn copy_rec(&self, curr: HashMap<String, Ponga>) -> HashMap<String, Ponga> {
         match self.outer {
             Some(ref outer_obj) => {
+                let merged = Self::merge(curr, self.map.clone());
                 let outer_map = outer_obj.map.clone();
                 let curr = Self::merge(merged, outer_map);
-                outer_obj.copy_rec(gc, curr)
+                outer_obj.copy_rec(curr)
             }
-            None => Env::from_map(merged),
+            None => curr,
         }
     }
 
@@ -55,12 +60,16 @@ impl Env {
         Env {
             map,
             outer: Some(me),
+            in_use: true,
         }
     }
 
     pub fn add_env_furthest_(&mut self, env: Gc<Env>, level: usize) -> usize {
         match &mut self.outer {
-            Some(outer) => outer.add_env_furthest_(env, level + 1),
+            Some(outer) => {
+                let mut mut_ref = outer.borrow_mut().unwrap();
+                mut_ref.add_env_furthest_(env, level + 1)
+            }
             None => {
                 self.outer = Some(env);
                 level
@@ -77,7 +86,10 @@ impl Env {
             self.outer.take()
         } else {
             match &mut self.outer {
-                Some(outer) => outer.remove_env_at_level_(level, curr + 1),
+                Some(outer) => {
+                    let mut mut_ref = outer.borrow_mut().unwrap();
+                    mut_ref.remove_env_at_level_(level, curr + 1)
+                }
                 None => None,
             }
         }
@@ -90,11 +102,22 @@ impl Env {
     pub fn insert_furthest(&mut self, s: String, val: Ponga) {
         match &mut self.outer {
             Some(outer_obj) => {
-                outer_obj.insert_furthest(s, val);
+                let mut mut_ref = outer_obj.borrow_mut().unwrap();
+                mut_ref.insert_furthest(s, val);
             }
             None => {
                 self.map.insert(s, val);
             }
+        }
+    }
+
+    pub fn find_in(obj: Gc<Env>, identifier: &str) -> Option<Gc<Env>> {
+        match obj.get(identifier) {
+            Some(_) => Some(obj),
+            None => match &obj.outer {
+                Some(outer) => Self::find_in(outer.clone(), identifier),
+                None => None,
+            },
         }
     }
     
@@ -108,26 +131,14 @@ impl Env {
         }
     }
 
-    pub fn get_mut(&mut self, identifier: &str) -> Option<&mut Ponga> {
-        match self.map.get_mut(identifier) {
-            Some(val) => Some(val),
-            None => match &mut self.outer {
-                Some(outer_obj) => outer_obj.get_mut(identifier),
-                None => None,
-            },
-        }
-    }
-
-    pub fn set(&mut self, identifer: &str, pong: Ponga) -> Option<()> {
-        match self.map.get_mut(identifer) {
-            Some(val) => {
-                *val = pong;
+    pub fn set(obj: Gc<Env>, identifier: &str, pong: Ponga) -> Option<()> {
+        match Self::find_in(obj, identifier) {
+            Some(env) => {
+                let mut mut_ref = env.borrow_mut().unwrap();
+                mut_ref.map.insert(identifier.to_string(), pong);
                 Some(())
             }
-            None => match self.outer {
-                Some(outer_obj) => outer_obj.borrow_mut().unwrap().set(identifer, pong),
-                None => None,
-            },
+            None => None,
         }
     }
 }

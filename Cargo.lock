@@ -17,7 +17,7 @@ checksum = "e78d4f1cc4ae33bbfc157ed5d5a5ef3bc29227303d595861deb238fcec4e9457"
 [[package]]
 name = "gc_rs"
 version = "0.1.0"
-source = "git+https://github.com/evan-a-w/gc_rs#c75d9a247abc0982fc9f29f5b315db216c88a07d"
+source = "git+https://github.com/evan-a-w/gc_rs#68ae8eb2a352436d083c0a4361090680a5846f61"
 dependencies = [
  "gc_rs_derive",
 ]
@@ -25,7 +25,7 @@ dependencies = [
 [[package]]
 name = "gc_rs_derive"
 version = "0.1.0"
-source = "git+https://github.com/evan-a-w/gc_rs#c75d9a247abc0982fc9f29f5b315db216c88a07d"
+source = "git+https://github.com/evan-a-w/gc_rs#68ae8eb2a352436d083c0a4361090680a5846f61"
 dependencies = [
  "proc-macro2",
  "quote",

@@ -3,7 +3,7 @@ use crate::stdlib::*;
 use crate::types::*;
 use crate::env::*;
 use crate::instructions::*;
-use gc_rs::{Gc, GcRefMut};
+use gc_rs::{Gc, GcRefMut, Trace};
 use std::collections::HashMap;
 use std::collections::LinkedList;
 use std::fs::File;
@@ -27,14 +27,14 @@ impl Runtime {
             env,
         };
 
-        let stdlib_scm = include_str!("stdlib.scm");
-        res.run_str(stdlib_scm).unwrap();
+        // let stdlib_scm = include_str!("stdlib.scm");
+        // res.run_str(stdlib_scm).unwrap();
 
         res
     }
 
     pub fn bind_global(&mut self, s: String, pong: Ponga) {
-        self.env.insert_furthest(s, pong);
+        self.env.borrow_mut().unwrap().insert_furthest(s, pong);
     }
 
     pub fn get_identifier_obj_ref(&self, identifier: &str) -> RunRes<&Ponga> {
@@ -44,15 +44,11 @@ impl Runtime {
     }
 
     pub fn set_identifier(&mut self, identifier: &str, pong: Ponga) -> RunRes<()> {
-        match self.env.borrow_mut().unwrap().get_mut(identifier) {
-            Some(pong_ref) => {
-                *pong_ref = pong;
-                Ok(())
-            }
-            None => Err(RuntimeErr::ReferenceError(
-                format!("Reference to {} not found", identifier),
-            )),
-        }
+        Env::set(
+            self.env.clone(), identifier, pong
+        ).ok_or(
+            RuntimeErr::ReferenceError(format!("Reference to {} not found", identifier))
+        )
     }
 
     pub fn clone_ref(&mut self, pong: Ponga) -> RunRes<Ponga> {
@@ -109,19 +105,32 @@ impl Runtime {
                 break;
             }
             match ins_stack.pop().unwrap() {
-                PopEnv => {
-                    self.env = self.env.borrow_mut().unwrap().outer.take().ok_or(
-                        RuntimeErr::Other("PopEnv: no outer env".to_string()),
-                    )?;
+                PopEnv(opt_lev) => {
+                    if let Some(level) = opt_lev {
+                        self.env.outer.as_ref().unwrap().root();
+                        self.env.outer.as_ref().unwrap().borrow_mut().unwrap().in_use = false;
+                        self.env = self.env
+                                       .borrow_mut()
+                                       .unwrap()
+                                       .remove_env_at_level(level)
+                                       .ok_or(
+                            RuntimeErr::Other("PopEnv: no outer env".to_string()),
+                        )?;
+                    } else {
+                        self.env = self.env.borrow_mut().unwrap().outer.take().ok_or(
+                            RuntimeErr::Other("PopEnv: no outer env".to_string()),
+                        )?;
+                    }
                 }
                 PushEnv(names) => {
-                    let map = HashMap::new();
+                    let mut map = HashMap::new();
                     for name in names {
                         map.insert(name, pop_or(&mut data_stack)?);
                     }
                     self.env = Gc::new(Env {
                         map,
-                        outer: Some(self.env),
+                        outer: Some(self.env.clone()),
+                        in_use: true,
                     });
                 }
                 PopStack => {
@@ -133,8 +142,8 @@ impl Runtime {
                     );
                 }
                 Set(s) => {
-                    self.env.borrow_mut().unwrap().set(
-                        &s, pop_or(&mut data_stack)?
+                    Env::set(
+                        self.env.clone(), &s, pop_or(&mut data_stack)?
                     ).ok_or(
                         RuntimeErr::ReferenceError(format!("Reference to {} not found", s))
                     )?;
@@ -171,16 +180,10 @@ impl Runtime {
                         HFunc(id) => {
                             data_stack.push(FUNCS[id].1(self, args)?);
                         }
-                        CFunc(args, sexpr, state) => {
-                            ins_stack.push(Instruction::PopEnv);
-                            self.env = Gc::new(Env {
-                                map: HashMap::new(),
-                                outer: Some(state.clone()),
-                            });
-
-                            ins_stack.push(Instruction::Eval(self.id_or_ref_peval(
-                                Ponga::Ref(sexpr))?)
-                            );
+                        _ => {
+                            return Err(RuntimeErr::TypeError(format!(
+                                "Expected function, not {}", func
+                            )));
                         }
                     } 
                 }
@@ -211,30 +214,108 @@ impl Runtime {
                                 return Err(RuntimeErr::Other("Empty sexpr".to_string()));
                             }
                             if is_keyword(&vals[0]) {
-                                // TODO
+                                let mut iter = vals.into_iter();
+                                let name = iter.next().unwrap().extract_name()?;
+                                match name.as_str() {
+                                    "lambda" => {
+                                        if iter.len() != 2 {
+                                            return Err(RuntimeErr::Other(
+                                                "Wrong number of arguments for lambda".to_string()
+                                            ));
+                                        }
+                                        let args = iter.next()
+                                                       .unwrap()
+                                                       .extract_names_from_sexpr()?;
+                                        let body = iter.next().unwrap();
+                                        if !body.is_sexpr() {
+                                            return Err(RuntimeErr::Other(
+                                                "Wrong type for lambda body".to_string()
+                                            ));
+                                        }
+                                        let state_map = self.env.copy();
+                                        let new_state = Gc::new(Env {
+                                            map: state_map,
+                                            outer: None,
+                                            in_use: false,
+                                        });
+                                        let pushed = CFunc(args, Gc::new(body), new_state);
+                                        data_stack.push(pushed);
+                                    }
+                                    "define" => {
+                                        if iter.len() != 2 {
+                                            return Err(RuntimeErr::Other(
+                                                "Wrong number of arguments for define".to_string()
+                                            ));
+                                        }
+                                        let name = iter.next().unwrap();
+                                        if name.is_sexpr() {
+                                            let mut arr = name.get_array()?.into_iter();
+                                            let name = arr.next().unwrap().extract_name()?;
+                                            let names = Ponga::extract_names_from_vec(arr.collect())?;
+                                            let names = names.into_iter()
+                                                             .map(Identifier)
+                                                             .collect();
+                                            let vec = vec![
+                                                Identifier("define".to_string()),
+                                                Identifier(name),
+                                                Sexpr(vec![
+                                                    Identifier("lambda".to_string()),
+                                                    Sexpr(names),
+                                                    iter.next().unwrap(),
+                                                ])
+                                            ];
+                                            ins_stack.push(Instruction::Eval(Sexpr(vec)));
+                                        } else {
+                                            let val = iter.next().unwrap();
+                                            ins_stack.push(Instruction::Define(name.extract_name()?));
+                                            ins_stack.push(Instruction::Eval(val));
+                                        }
+                                        data_stack.push(Ponga::Null);
+                                    }
+                                    "echo" => {
+                                        for val in iter {
+                                            data_stack.push(val);
+                                        }
+                                    }
+                                    _ => {
+                                        return Err(RuntimeErr::Other(format!(
+                                            "Unimplemented keyword {}", name
+                                        )));
+                                    }
+                                }
                                 continue;
                             }
                             let mut iter = vals.into_iter();
-                            let func = self.id_or_ref_peval(iter.next().unwrap())?;
-                            if !func.is_func() {
-                                return Err(RuntimeErr::Other(format!(
-                                    "First element of sexpr ({:?}) is not function",
-                                    func
-                                )));
-                            }
+                            let func = self.eval(iter.next().unwrap())?;
 
                             match func {
                                 HFunc(id) => {
                                     ins_stack.push(Instruction::Call(iter.len()));
+                                    data_stack.push(HFunc(id));
                                     for arg in iter {
                                         ins_stack.push(Instruction::Eval(arg));
                                     }
                                 }
                                 CFunc(names, sexpr, state) => {
-                                    ins_stack.push(Instruction::PopEnv);
+                                    if !state.in_use {
+                                        state.borrow_mut().unwrap().in_use = true;
+                                        let new_env = Gc::new(Env {
+                                            map: HashMap::new(),
+                                            outer: Some(state.clone()),
+                                            in_use: true,
+                                        });
+                                        let level = new_env.borrow_mut()
+                                                       .unwrap()
+                                                       .add_env_furthest(self.env.clone());
+                                        ins_stack.push(Instruction::PopEnv(Some(level)));
+                                        self.env = new_env;
+                                    }
+
                                     let len = names.len();
-                                    ins_stack.push(Instruction::Call(len));
-                                    ins_stack.push(Instruction::PushEnv(names.clone()));
+
+                                    ins_stack.push(Instruction::PopEnv(None));
+                                    ins_stack.push(Instruction::Eval((*sexpr).clone()));
+                                    ins_stack.push(Instruction::PushEnv(names));
 
                                     for i in 0..len {
                                         ins_stack.push(Instruction::Eval(iter.next().ok_or(
@@ -243,13 +324,11 @@ impl Runtime {
                                             ))
                                         )?));
                                     }
-
-                                    data_stack.push(CFunc(names, sexpr, state));
                                 }
                                 MFunc(names, sexpr) => {
-                                    ins_stack.push(Instruction::PopEnv);
+                                    ins_stack.push(Instruction::PopEnv(None));
                                     let len = names.len();
-                                    ins_stack.push(Instruction::Call(len));
+                                    ins_stack.push(Instruction::Call(0));
                                     ins_stack.push(Instruction::PushEnv(names));
                                     for i in 0..len {
                                         data_stack.push(iter.next().ok_or(
@@ -258,11 +337,15 @@ impl Runtime {
                                             ))
                                         )?);
                                     }
+
+                                    data_stack.push(MFunc(vec![], sexpr));
                                 }
-                                _ => return Err(RuntimeErr::Other(format!(
-                                    "First element of sexpr ({:?}) is not function",
-                                    func
-                                ))),
+                                _ => {
+                                    return Err(RuntimeErr::Other(format!(
+                                        "First element of sexpr `{}` is not function",
+                                        func
+                                    )));
+                                }
                             }
                         }
                         _ => data_stack.push(self.id_or_ref_peval(pong)?),
