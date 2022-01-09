@@ -6,12 +6,6 @@ use gc_rs::{Gc, Trace};
 pub type PongMap = HashMap<String, Ponga>;
 
 #[derive(Debug, Trace, Clone, PartialEq)]
-pub struct MapUse {
-    pub map: Gc<PongMap>,
-    pub used: bool,
-}
-
-#[derive(Debug, Trace, Clone, PartialEq)]
 pub struct Env {
     maps: Vec<Gc<PongMap>>,
 }

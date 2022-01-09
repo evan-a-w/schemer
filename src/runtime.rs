@@ -217,10 +217,7 @@ impl Runtime {
                                                 "Wrong type for lambda body".to_string(),
                                             ));
                                         }
-                                        let state_map = Gc::new(MapUse {
-                                            map: Gc::new(self.env.copy()),
-                                            used: false,
-                                        });
+                                        let state_map = Gc::new(self.env.copy());
                                         let pushed = CFunc(args, Gc::new(body), state_map);
                                         data_stack.push(pushed);
                                     }
@@ -390,11 +387,8 @@ impl Runtime {
                                     }
                                 }
                                 CFunc(names, sexpr, state) => {
-                                    if !state.used {
-                                        state.borrow_mut().unwrap().used = true;
-                                        self.env.push(state.map.clone());
-                                        ins_stack.push(Instruction::PopEnv);
-                                    }
+                                    self.env.push(state.clone());
+                                    ins_stack.push(Instruction::PopEnv);
 
                                     let len = names.len();
 

@@ -1,6 +1,6 @@
 use crate::number::*;
 use crate::runtime::Runtime;
-use crate::env::{MapUse, PongMap};
+use crate::env::PongMap;
 use crate::stdlib::FUNCS;
 use std::collections::HashMap;
 use std::collections::LinkedList;
@@ -23,7 +23,7 @@ pub enum Ponga {
     Object(HashMap<String, Ponga>),
     Array(Vec<Ponga>),
     Sexpr(Vec<Ponga>),
-    CFunc(Vec<String>, Gc<Ponga>, Gc<MapUse>), // args, sexpr_id, state_id
+    CFunc(Vec<String>, Gc<Ponga>, Gc<PongMap>), // args, sexpr_id, state_id
     MFunc(Vec<String>, Gc<Ponga>),
     HFunc(FuncId),
     True,
