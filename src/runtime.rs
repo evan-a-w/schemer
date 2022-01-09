@@ -221,6 +221,24 @@ impl Runtime {
                                         let pushed = CFunc(args, Gc::new(body), state_map);
                                         data_stack.push(pushed);
                                     }
+                                    "open-lambda" => {
+                                        if iter.len() != 2 {
+                                            return Err(RuntimeErr::Other(
+                                                "Wrong number of arguments for open lambda".to_string(),
+                                            ));
+                                        }
+                                        let args =
+                                            iter.next().unwrap().extract_names_from_sexpr()?;
+                                        let body = iter.next().unwrap();
+                                        if !body.is_sexpr() {
+                                            return Err(RuntimeErr::Other(
+                                                "Wrong type for lambda body".to_string(),
+                                            ));
+                                        }
+                                        let state_map = Gc::new(HashMap::new());
+                                        let pushed = CFunc(args, Gc::new(body), state_map);
+                                        data_stack.push(pushed);
+                                    }
                                     "define" => {
                                         if iter.len() != 2 {
                                             return Err(RuntimeErr::Other(
@@ -366,6 +384,76 @@ impl Runtime {
                                             data_stack.push(val);
                                         }
                                     }
+				    "mac" => {
+					if iter.len() != 2 {
+					    return Err(RuntimeErr::Other(
+						"mac must have two arguments".to_string()
+					    ));
+					}
+					let first = iter.next().unwrap();
+					let body = iter.next().unwrap();
+
+					let mut cargs = Vec::new();
+					if !first.is_sexpr() {
+					    return Err(RuntimeErr::Other(
+						"first argument to mac must be an s-expr with identifiers"
+						    .to_string()
+					    ));
+					}
+
+					let inner = first.get_array()?;
+					for i in inner {
+					    if !i.is_identifier() {
+						return Err(RuntimeErr::Other(
+						    "first argument to mac must be an s-expr with identifiers"
+							.to_string()
+						));
+					    }
+					    cargs.push(i.extract_name()?);
+					}
+
+					data_stack.push(MFunc(cargs, Gc::new(body)));
+				    }
+				    "begin" => {
+					if iter.len() < 1 {
+					    return Err(RuntimeErr::Other(
+						"begin must have at least one argument".to_string()
+					    ));
+					}
+					let mut iter = iter.rev();
+					let first = iter.next().unwrap();
+					ins_stack.push(Instruction::Eval(first));
+					for i in iter {
+					    ins_stack.push(Instruction::PopStack);
+					    ins_stack.push(Instruction::Eval(i));
+					}
+				    }
+				    "deref" => {
+					if iter.len() != 1 {
+					    return Err(RuntimeErr::Other(
+
+						"deref must have one argument".to_string()
+					    ));
+					}
+					let val = iter.next().unwrap();
+					let deref = match val {
+					    Ponga::Identifier(name) => {
+						let r = self.get_identifier_obj_ref(&name)?; 
+						if !r.is_identifier() {
+						    Err(RuntimeErr::Other(format!(
+							"identifier in deref must refer to an identifier (not {:?})", r
+						    )))
+						} else {
+						    Ok(r.clone())
+						}
+					    }
+					    _ => Err(RuntimeErr::Other(format!(
+						"deref requires an identifier as argument"
+
+					    ))),
+					}?;
+					data_stack.push(deref);
+				    }
                                     _ => {
                                         return Err(RuntimeErr::Other(format!(
                                             "Unimplemented keyword {}",
