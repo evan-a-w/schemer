@@ -1,6 +1,6 @@
 use crate::number::*;
 use crate::runtime::Runtime;
-use crate::env::Env;
+use crate::env::{MapUse, PongMap};
 use crate::stdlib::FUNCS;
 use std::collections::HashMap;
 use std::collections::LinkedList;
@@ -11,21 +11,7 @@ pub type Id = usize;
 
 pub type FuncId = usize;
 
-pub enum Types {
-    Number,
-    String,
-    Boolean,
-    Function,
-    Vector,
-    Object,
-    Null,
-    Char,
-    Symbol,
-    Any,
-    Iterable,
-}
-
-#[derive(Debug, PartialEq, Clone)]
+#[derive(Debug, PartialEq, Clone, Trace)]
 pub enum Ponga {
     Null,
     Number(Number),
@@ -37,83 +23,12 @@ pub enum Ponga {
     Object(HashMap<String, Ponga>),
     Array(Vec<Ponga>),
     Sexpr(Vec<Ponga>),
-    CFunc(Vec<String>, Gc<Ponga>, Gc<Env>), // args, sexpr_id, state_id
+    CFunc(Vec<String>, Gc<Ponga>, Gc<MapUse>), // args, sexpr_id, state_id
     MFunc(Vec<String>, Gc<Ponga>),
     HFunc(FuncId),
     True,
     False,
     Ref(Gc<Ponga>),
-}
-
-impl Trace for Ponga {
-    fn trace(&self) {
-        match self {
-            Ponga::Array(a) => {
-                for v in a {
-                    v.trace();
-                }
-            }
-            Ponga::List(a) => {
-                for v in a {
-                    v.trace();
-                }
-            }
-            Ponga::Object(a) => {
-                for v in a.values() {
-                    v.trace();
-                }
-            }
-            Ponga::Ref(id) => {
-                id.trace();
-            }
-            _ => {}
-        }
-    }
-
-    fn root(&self) {
-        match self {
-            Ponga::Ref(id) => id.root(),
-            _ => {},
-        }
-    }
-
-    fn deroot(&self) {
-        match self {
-            Ponga::Ref(id) => id.deroot(),
-            _ => {},
-        }
-    }
-
-    fn root_children(&self) {
-        match self {
-            Ponga::Array(a) => {
-                for v in a {
-                    v.root_children();
-                }
-            }
-            Ponga::List(a) => {
-                for v in a {
-                    v.root_children();
-                }
-            }
-            Ponga::Object(a) => {
-                for v in a.values() {
-                    v.root_children();
-                }
-            }
-            Ponga::Ref(id) => {
-                id.root_children();
-            }
-            _ => {}
-        }
-    }
-
-    fn deroot_children(&self) {
-        match self {
-            Ponga::Ref(id) => id.deroot_children(),
-            _ => {}
-        }
-    }
 }
 
 impl Ponga {
