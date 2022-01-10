@@ -265,10 +265,11 @@ impl Ponga {
         }
     }
 
-    pub fn extract_names_vals_from_sexpr(self) -> RunRes<Vec<(String, Ponga)>> {
+    pub fn extract_names_vals_from_sexpr(self) -> RunRes<(Vec<String>, Vec<Ponga>)> {
         match self {
             Ponga::Sexpr(p) => {
-                let mut vec = Vec::with_capacity(p.len());
+                let mut names = Vec::with_capacity(p.len());
+                let mut vals = Vec::with_capacity(p.len());
                 for pong in p {
                     match pong {
                         Ponga::Sexpr(v) => {
@@ -281,14 +282,53 @@ impl Ponga {
                             let mut iter = v.into_iter();
                             let name = iter.next().unwrap().extract_name()?;
                             let value = iter.next().unwrap();
-                            vec.push((name, value))
+                            names.push(name);
+                            vals.push(value);
                         }
                         _ => return Err(RuntimeErr::TypeError(format!(
                             "Expected identifier, received {:?}", pong)
                         )),
                     }
                 }
-                Ok(vec)
+                Ok((names, vals))
+            }
+            _ => Err(RuntimeErr::TypeError(format!("Expected sexpr, received {:?}", self))),
+        }
+    }
+
+    pub fn extract_deref(self, runtime: &Runtime) -> RunRes<(Vec<String>, Vec<Ponga>)> {
+        match self {
+            Ponga::Sexpr(p) => {
+                let mut names = Vec::with_capacity(p.len());
+                let mut vals = Vec::with_capacity(p.len());
+                for pong in p {
+                    match pong {
+                        Ponga::Sexpr(v) => {
+                            if v.len() != 2 {
+                                return Err(RuntimeErr::TypeError(format!(
+                                    "Expected sexpr of length 2, received {:?}",
+                                    Ponga::Sexpr(v)
+                                )))
+                            }
+                            let mut iter = v.into_iter();
+                            let name = iter.next().unwrap().extract_name()?;
+                            let name = runtime.get_identifier_obj_ref(&name)?;
+                            if !name.is_identifier() {
+                                return Err(RuntimeErr::TypeError(format!(
+                                    "Expected identifier, received {}", name
+                                )))
+                            }
+                            let name = name.clone().extract_name()?;
+                            let value = iter.next().unwrap();
+                            names.push(name);
+                            vals.push(value);
+                        }
+                        _ => return Err(RuntimeErr::TypeError(format!(
+                            "Expected identifier, received {:?}", pong)
+                        )),
+                    }
+                }
+                Ok((names, vals))
             }
             _ => Err(RuntimeErr::TypeError(format!("Expected sexpr, received {:?}", self))),
         }

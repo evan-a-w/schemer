@@ -129,11 +129,13 @@ impl Runtime {
                 }
                 Define(s) => {
                     self.env.insert_furthest(s, pop_or(&mut data_stack)?);
+                    data_stack.push(Ponga::Null);
                 }
                 Set(s) => {
                     self.env.set(&s, pop_or(&mut data_stack)?).ok_or(
                         RuntimeErr::ReferenceError(format!("Reference to {} not found", s)),
                     )?;
+                    data_stack.push(Ponga::Null);
                 }
                 CollectArray(n) => {
                     let mut v = Vec::with_capacity(n);
@@ -277,10 +279,8 @@ impl Runtime {
                                             ));
                                         }
                                         // Can make this better if we push it later but should be fine for now
-                                        //println!("iter: {:?}", iter);
                                         let cond = self.id_or_ref_peval(iter.next().unwrap())?;
                                         let cond = self.eval(cond)?;
-                                        //println!("cond: {}", cond);
                                         let val = if cond != Ponga::False {
                                             iter.nth(0).unwrap()
                                         } else {
@@ -384,36 +384,6 @@ impl Runtime {
                                             data_stack.push(val);
                                         }
                                     }
-				    "mac" => {
-					if iter.len() != 2 {
-					    return Err(RuntimeErr::Other(
-						"mac must have two arguments".to_string()
-					    ));
-					}
-					let first = iter.next().unwrap();
-					let body = iter.next().unwrap();
-
-					let mut cargs = Vec::new();
-					if !first.is_sexpr() {
-					    return Err(RuntimeErr::Other(
-						"first argument to mac must be an s-expr with identifiers"
-						    .to_string()
-					    ));
-					}
-
-					let inner = first.get_array()?;
-					for i in inner {
-					    if !i.is_identifier() {
-						return Err(RuntimeErr::Other(
-						    "first argument to mac must be an s-expr with identifiers"
-							.to_string()
-						));
-					    }
-					    cargs.push(i.extract_name()?);
-					}
-
-					data_stack.push(MFunc(cargs, Gc::new(body)));
-				    }
 				    "begin" => {
 					if iter.len() < 1 {
 					    return Err(RuntimeErr::Other(
@@ -454,6 +424,147 @@ impl Runtime {
 					}?;
 					data_stack.push(deref);
 				    }
+                                    "let" => {
+                                        if iter.len() < 2 {
+                                            return Err(RuntimeErr::Other(
+                                                "let must have at least two arguments".to_string(),
+                                            ));
+                                        }
+                                        let first = iter.next().unwrap();
+                                        let mut iter = iter.rev();
+                                        let (names, vals) = first.extract_names_vals_from_sexpr()?;
+                                        ins_stack.push(Instruction::PopEnv);
+                                        ins_stack.push(Instruction::Eval(iter.next().unwrap()));
+                                        for i in iter {
+                                            ins_stack.push(Instruction::PopStack);
+                                            ins_stack.push(Instruction::Eval(i));
+                                        }
+                                        ins_stack.push(Instruction::PushEnv(names));
+                                        for val in vals {
+                                            ins_stack.push(Instruction::Eval(val));
+                                        }
+                                    }
+                                    "let-deref" => {
+                                        if iter.len() < 2 {
+                                            return Err(RuntimeErr::Other(
+                                                "let must have at least two arguments".to_string(),
+                                            ));
+                                        }
+                                        let first = iter.next().unwrap();
+                                        let mut iter = iter.rev();
+                                        let (names, vals) = first.extract_deref(self)?;
+                                        ins_stack.push(Instruction::PopEnv);
+                                        ins_stack.push(Instruction::Eval(iter.next().unwrap()));
+                                        for i in iter {
+                                            ins_stack.push(Instruction::PopStack);
+                                            ins_stack.push(Instruction::Eval(i));
+                                        }
+                                        ins_stack.push(Instruction::PushEnv(names));
+                                        for val in vals {
+                                            ins_stack.push(Instruction::Eval(val));
+                                        }
+                                    }
+                                    "set!" => {
+                                        if iter.len() != 2 {
+                                            return Err(RuntimeErr::Other(
+                                                "set! must have two arguments".to_string(),
+                                            ));
+                                        }
+                                        let name = iter.next().unwrap().extract_name()?;
+                                        let val = iter.next().unwrap();
+                                        ins_stack.push(Instruction::Set(name));
+                                        ins_stack.push(Instruction::Eval(val));
+                                    }
+                                    "defmacro" => {
+                                        if iter.len() != 2 {
+                                            return Err(RuntimeErr::Other(
+                                                "defmacro must have two arguments".to_string()
+                                            ));
+                                        }
+                                        let name = iter.next().unwrap();
+                                        let val = iter.next().unwrap();
+
+                                        if !name.is_sexpr() {
+                                            return Err(RuntimeErr::Other(
+                                                "define first argument must be an identifier or
+                                                 an S-Expr of identifiers".to_string()
+                                            ));
+                                        }
+                                        let v = name.get_array()?;
+                                        if v.len() < 1 {
+                                            return Err(RuntimeErr::Other(
+                                                "defmacro first arg must be sexpr".to_string()
+                                            ));
+                                        }
+                                        let mut sexpr_iter = v.into_iter();
+                                        let new_name = sexpr_iter.next().unwrap();
+                                        let other_args = sexpr_iter.collect();
+
+                                        // Define new_name by the lambda created from the other args
+                                        ins_stack.push(Instruction::Define(new_name.extract_name()?));
+                                        
+                                        
+                                        let new_sexpr = Sexpr(vec![Identifier("mac".to_string()),
+                                                                   Sexpr(other_args),
+                                                                   val]);
+                                        ins_stack.push(Instruction::Eval(new_sexpr));
+                                    }
+                                    "mac" => {
+                                        if iter.len() != 2 {
+                                            return Err(RuntimeErr::Other(
+                                                "mac must have two arguments".to_string()
+                                            ));
+                                        }
+                                        let first = iter.next().unwrap();
+                                        let body = iter.next().unwrap();
+
+                                        let mut cargs = Vec::new();
+                                        if !first.is_sexpr() {
+                                            return Err(RuntimeErr::Other(
+                                                "first argument to mac must be an s-expr with identifiers"
+                                                    .to_string()
+                                            ));
+                                        }
+
+                                        let inner = first.get_array()?;
+                                        for i in inner {
+                                            if !i.is_identifier() {
+                                                return Err(RuntimeErr::Other(
+                                                    "first argument to mac must be an s-expr with identifiers"
+                                                        .to_string()
+                                                ));
+                                            }
+                                            cargs.push(i.extract_name()?);
+                                        }
+
+                                        data_stack.push(MFunc(cargs, Gc::new(body)));
+                                    }
+                                    "set-deref!" => {
+                                        if iter.len() != 2 {
+                                            return Err(RuntimeErr::Other(
+                                                "set-deref! must have two arguments".to_string()
+                                            ));
+                                        }
+                                        let name = match iter.next().unwrap() {
+                                            Ponga::Identifier(name) => {
+                                                let r = self.get_identifier_obj_ref(&name)?; 
+                                                if !r.is_identifier() {
+                                                    Err(RuntimeErr::Other(format!(
+                                                        "identifier in set-deref! must refer to an identifier (not {:?})", r
+                                                    )))
+                                                } else {
+                                                    r.clone().extract_name()
+                                                }
+                                            }
+                                            _ => Err(RuntimeErr::Other(format!(
+                                                "set-deref! requires an identifier as argument"
+                                            ))),
+                                        }?;
+                                        let val = iter.next().unwrap();
+
+                                        ins_stack.push(Instruction::Set(name));
+                                        ins_stack.push(Instruction::Eval(val));
+                                    }
                                     _ => {
                                         return Err(RuntimeErr::Other(format!(
                                             "Unimplemented keyword {}",
@@ -496,15 +607,17 @@ impl Runtime {
                                 MFunc(names, sexpr) => {
                                     ins_stack.push(Instruction::PopEnv);
                                     let len = names.len();
-                                    ins_stack.push(Instruction::Call(0));
+                                    ins_stack.push(Instruction::Eval((*sexpr).clone()));
                                     ins_stack.push(Instruction::PushEnv(names));
-                                    for i in 0..len {
-                                        data_stack.push(iter.next().ok_or(RuntimeErr::Other(
-                                            format!("Expected {} arguments, got {}", len, i),
-                                        ))?);
-                                    }
 
+                                    let mut iter = iter.rev();
                                     data_stack.push(MFunc(vec![], sexpr));
+                                    for i in 0..len {
+                                        let next = iter.next().ok_or(RuntimeErr::Other(
+                                            format!("Expected {} arguments, got {}", len, i),
+                                        ))?;
+                                        data_stack.push(next);
+                                    }
                                 }
                                 _ => {
                                     return Err(RuntimeErr::Other(format!(
@@ -514,6 +627,8 @@ impl Runtime {
                                 }
                             }
                         }
+                        Identifier(_)
+                        | Ref(_) => ins_stack.push(Instruction::Eval(self.id_or_ref_peval(pong)?)),
                         _ => data_stack.push(self.id_or_ref_peval(pong)?),
                     }
                 }
