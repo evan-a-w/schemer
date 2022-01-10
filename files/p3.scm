@@ -10,8 +10,10 @@
 
 (define val 600851475143)
 (define (iter curr)
-        (if (and (prime? curr) (= 0 (modulo val curr)))
-            (begin (set! val (/ val curr)) curr)
-            (+ curr 1)))
+        (begin
+            (display curr)
+            (if (and (prime? curr) (= 0 (modulo val curr)))
+                (begin (set! val (/ val curr)) curr)
+                (+ curr 1))))
 (apply-while (lambda (v) (< v val)) iter 2)
 val

@@ -464,7 +464,6 @@ pub fn test_list_to_vec() {
 
 #[test]
 pub fn test_simple_macro() {
-    assert!(false);
     let program = "
 (let ((x 1))
      (while (< x 10)
@@ -531,5 +530,6 @@ curr
     ";
     let mut prog_res = run_str(program).unwrap();
     let res = prog_res.pop().unwrap().unwrap();
+    println!("{}", res);
     assert!(res == Ponga::Number(Number::Int(6857)));
 }

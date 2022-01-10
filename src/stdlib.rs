@@ -505,7 +505,7 @@ pub fn foldl(runtime: &mut Runtime, mut args: Vec<Ponga>) -> RunRes<Ponga> {
 }
 
 pub fn foldr(runtime: &mut Runtime, mut args: Vec<Ponga>) -> RunRes<Ponga> {
-    args_assert_len(&mut args, 3, "foldl")?;
+    args_assert_len(&mut args, 3, "foldr")?;
     let iterable = args.pop().unwrap();
     let mut acc = args.pop().unwrap();
     let func = args.pop().unwrap();

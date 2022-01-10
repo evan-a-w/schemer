@@ -22,7 +22,7 @@ impl Env {
     }
 
     pub fn copy(&self) -> PongMap {
-        self.maps.iter().fold(PongMap::new(), |mut acc, map| {
+        self.maps.iter().skip(1).fold(PongMap::new(), |mut acc, map| {
             for (k, v) in map.iter() {
                 acc.insert(k.clone(), v.clone());
             }
@@ -35,7 +35,7 @@ impl Env {
     }
 
     pub fn get(&self, identifier: &str) -> Option<&Ponga> {
-        for m in self.maps.iter().rev() {
+        for (i, m) in self.maps.iter().enumerate().rev() {
             if let Some(ponga) = m.get(identifier) {
                 return Some(ponga);
             }
@@ -44,6 +44,7 @@ impl Env {
     }
 
     pub fn insert_furthest(&self, identifier: String, pong: Ponga) {
+        let s = identifier.clone();
         self.maps[0].borrow_mut().unwrap().insert(identifier, pong);
     }
 

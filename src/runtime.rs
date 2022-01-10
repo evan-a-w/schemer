@@ -114,8 +114,13 @@ impl Runtime {
             }
             let ins = ins_stack.pop().unwrap();
             match ins {
-                PopEnv => {
-                    self.env.pop();
+                PopEnv(b) => {
+                    let map = self.env.pop();
+                    if b {
+                        for (k, v) in &*map {
+                            self.env.set(k, v.clone());
+                        }
+                    }
                 }
                 PushEnv(names) => {
                     let mut map = HashMap::new();
@@ -201,10 +206,11 @@ impl Runtime {
                             if vals.len() < 1 {
                                 return Err(RuntimeErr::Other("Empty sexpr".to_string()));
                             }
-                            if is_keyword(&vals[0]) {
-                                let mut iter = vals.into_iter();
-                                let name = iter.next().unwrap().extract_name()?;
-                                match name.as_str() {
+
+                            let mut iter = vals.into_iter();
+                            let func = iter.next().unwrap();
+                            match &func {
+                                Identifier(s) => match s.as_str() {
                                     "lambda" => {
                                         if iter.len() != 2 {
                                             return Err(RuntimeErr::Other(
@@ -222,6 +228,7 @@ impl Runtime {
                                         let state_map = Gc::new(self.env.copy());
                                         let pushed = CFunc(args, Gc::new(body), state_map);
                                         data_stack.push(pushed);
+                                        continue;
                                     }
                                     "open-lambda" => {
                                         if iter.len() != 2 {
@@ -237,9 +244,9 @@ impl Runtime {
                                                 "Wrong type for lambda body".to_string(),
                                             ));
                                         }
-                                        let state_map = Gc::new(HashMap::new());
-                                        let pushed = CFunc(args, Gc::new(body), state_map);
+                                        let pushed = MFunc(args, Gc::new(body));
                                         data_stack.push(pushed);
+                                        continue;
                                     }
                                     "define" => {
                                         if iter.len() != 2 {
@@ -271,6 +278,7 @@ impl Runtime {
                                             ins_stack.push(Instruction::Eval(val));
                                         }
                                         data_stack.push(Ponga::Null);
+                                        continue;
                                     }
                                     "if" => {
                                         if iter.len() != 3 {
@@ -287,6 +295,7 @@ impl Runtime {
                                             iter.nth(1).unwrap()
                                         };
                                         ins_stack.push(Instruction::Eval(val));
+                                        continue;
                                     }
                                     "copy" => {
                                         if iter.len() != 1 {
@@ -297,6 +306,7 @@ impl Runtime {
 
                                         let val = self.deep_copy(iter.next().unwrap());
                                         data_stack.push(val);
+                                        continue;
                                     }
                                     "$EVAL" | "eval" => {
                                         if iter.len() != 1 {
@@ -306,6 +316,7 @@ impl Runtime {
                                         }
                                         let val = self.deep_copy(iter.next().unwrap());
                                         ins_stack.push(Instruction::Eval(val));
+                                        continue;
                                     }
                                     "$FLIP" | "code<->data" | "data<->code" => {
                                         if iter.len() != 1 {
@@ -323,6 +334,7 @@ impl Runtime {
                                             val => val,
                                         };
                                         data_stack.push(val.flip_code_vals(self));
+                                        continue;
                                     }
                                     "$FLIP-EVAL" | "code<->data.eval" | "data<->code.eval" => {
                                         if iter.len() != 1 {
@@ -333,6 +345,7 @@ impl Runtime {
                                         let val = iter.next().unwrap();
                                         ins_stack
                                             .push(Instruction::Eval(val.flip_code_vals(self)));
+                                        continue;
                                     }
                                     "$EVAL-FLIP-EVAL"
                                     | "eval.code<->data.eval"
@@ -346,6 +359,7 @@ impl Runtime {
                                         let val = self.eval(iter.next().unwrap())?;
                                         ins_stack
                                             .push(Instruction::Eval(val.flip_code_vals(self)));
+                                        continue;
                                     }
                                     "quote" => {
                                         if iter.len() != 1 {
@@ -362,11 +376,13 @@ impl Runtime {
                                             val => val,
                                         };
                                         data_stack.push(val);
+                                        continue;
                                     }
                                     "$DELAY" => {
                                         for i in iter {
                                             data_stack.push(i);
                                         }
+                                        continue;
                                     }
                                     "sym->id" => {
                                         if iter.len() != 1 {
@@ -378,11 +394,13 @@ impl Runtime {
                                         data_stack.push(self.id_or_ref_peval(
                                             Ponga::Identifier(val.get_symbol_string()?),
                                         )?);
+                                        continue;
                                     }
                                     "echo" => {
                                         for val in iter {
                                             data_stack.push(val);
                                         }
+                                        continue;
                                     }
 				    "begin" => {
 					if iter.len() < 1 {
@@ -397,6 +415,7 @@ impl Runtime {
 					    ins_stack.push(Instruction::PopStack);
 					    ins_stack.push(Instruction::Eval(i));
 					}
+                                        continue;
 				    }
 				    "deref" => {
 					if iter.len() != 1 {
@@ -423,6 +442,7 @@ impl Runtime {
 					    ))),
 					}?;
 					data_stack.push(deref);
+                                        continue;
 				    }
                                     "let" => {
                                         if iter.len() < 2 {
@@ -433,7 +453,7 @@ impl Runtime {
                                         let first = iter.next().unwrap();
                                         let mut iter = iter.rev();
                                         let (names, vals) = first.extract_names_vals_from_sexpr()?;
-                                        ins_stack.push(Instruction::PopEnv);
+                                        ins_stack.push(Instruction::PopEnv(false));
                                         ins_stack.push(Instruction::Eval(iter.next().unwrap()));
                                         for i in iter {
                                             ins_stack.push(Instruction::PopStack);
@@ -443,6 +463,7 @@ impl Runtime {
                                         for val in vals {
                                             ins_stack.push(Instruction::Eval(val));
                                         }
+                                        continue;
                                     }
                                     "let-deref" => {
                                         if iter.len() < 2 {
@@ -453,7 +474,7 @@ impl Runtime {
                                         let first = iter.next().unwrap();
                                         let mut iter = iter.rev();
                                         let (names, vals) = first.extract_deref(self)?;
-                                        ins_stack.push(Instruction::PopEnv);
+                                        ins_stack.push(Instruction::PopEnv(false));
                                         ins_stack.push(Instruction::Eval(iter.next().unwrap()));
                                         for i in iter {
                                             ins_stack.push(Instruction::PopStack);
@@ -463,6 +484,7 @@ impl Runtime {
                                         for val in vals {
                                             ins_stack.push(Instruction::Eval(val));
                                         }
+                                        continue;
                                     }
                                     "set!" => {
                                         if iter.len() != 2 {
@@ -474,6 +496,7 @@ impl Runtime {
                                         let val = iter.next().unwrap();
                                         ins_stack.push(Instruction::Set(name));
                                         ins_stack.push(Instruction::Eval(val));
+                                        continue;
                                     }
                                     "defmacro" => {
                                         if iter.len() != 2 {
@@ -508,6 +531,7 @@ impl Runtime {
                                                                    Sexpr(other_args),
                                                                    val]);
                                         ins_stack.push(Instruction::Eval(new_sexpr));
+                                        continue;
                                     }
                                     "mac" => {
                                         if iter.len() != 2 {
@@ -538,6 +562,7 @@ impl Runtime {
                                         }
 
                                         data_stack.push(MFunc(cargs, Gc::new(body)));
+                                        continue;
                                     }
                                     "set-deref!" => {
                                         if iter.len() != 2 {
@@ -564,18 +589,13 @@ impl Runtime {
 
                                         ins_stack.push(Instruction::Set(name));
                                         ins_stack.push(Instruction::Eval(val));
+                                        continue;
                                     }
-                                    _ => {
-                                        return Err(RuntimeErr::Other(format!(
-                                            "Unimplemented keyword {}",
-                                            name
-                                        )));
-                                    }
+                                    _ => {},
                                 }
-                                continue;
+                                _ => {},
                             }
-                            let mut iter = vals.into_iter();
-                            let func = self.eval(iter.next().unwrap())?;
+                            let func = self.eval(func)?;
 
                             match func {
                                 HFunc(id) => {
@@ -587,11 +607,11 @@ impl Runtime {
                                 }
                                 CFunc(names, sexpr, state) => {
                                     self.env.push(state.clone());
-                                    ins_stack.push(Instruction::PopEnv);
+                                    ins_stack.push(Instruction::PopEnv(true));
 
                                     let len = names.len();
 
-                                    ins_stack.push(Instruction::PopEnv);
+                                    ins_stack.push(Instruction::PopEnv(false));
                                     ins_stack.push(Instruction::Eval((*sexpr).clone()));
                                     ins_stack.push(Instruction::PushEnv(names));
 
@@ -605,7 +625,7 @@ impl Runtime {
                                     }
                                 }
                                 MFunc(names, sexpr) => {
-                                    ins_stack.push(Instruction::PopEnv);
+                                    ins_stack.push(Instruction::PopEnv(false));
                                     let len = names.len();
                                     ins_stack.push(Instruction::Eval((*sexpr).clone()));
                                     ins_stack.push(Instruction::PushEnv(names));
@@ -621,14 +641,13 @@ impl Runtime {
                                 }
                                 _ => {
                                     return Err(RuntimeErr::Other(format!(
-                                        "First element of sexpr `{}` is not function",
-                                        func
+                                        "First element of sexpr `{}` is not function (rest {:?})",
+                                        func, iter
                                     )));
                                 }
                             }
                         }
-                        Identifier(_)
-                        | Ref(_) => ins_stack.push(Instruction::Eval(self.id_or_ref_peval(pong)?)),
+                        Identifier(_) => ins_stack.push(Instruction::Eval(self.id_or_ref_peval(pong)?)),
                         _ => data_stack.push(self.id_or_ref_peval(pong)?),
                     }
                 }
